@@ -1,0 +1,85 @@
+.TH TF(1)
+.SH NAME
+tf - launch a container on 20ft.nz
+.SH SYNOPSIS
+.B tf
+[\fB\-h\fR]
+[\fB\-v\fR]
+[\fB\-\-loc \fIxxx.20ft.nz\fR]
+[\fB\-\-loc_ip \fIyyy.local\fR]
+[\fB\-\-latest\fR]
+[\fB\-\-json \fIfilename\fR]
+[\fB\-\-browser\fR
+[\fB\-\-domain \fIhost.name\fR]]
+\fB\fIimage\fR
+[\fB\fIENVIRONMENT=\fIvalue \fR[\fB\fIENVIRONMENT=VALUE \fR...]]
+.SH DESCRIPTION
+.B tf
+Launches containers on 20ft.nz, passes the environment variables and creates localhost tunnels to ports 'exposed' within the Docker config. Use \fB\-\-loc\fR to specify a non-default location and \fB\-\-loc_ip\fR to specify a connection ip other than that obtained by a dns lookup.
+
+Find localhost addresses using the \fB\-\-json\fR file or directly attach a browser with \fB\-\-browser\fR with an optional hostname sent as the HTTP Host header. Note that for the browser to attach the hostname needs to resolve to 127.0.0.1 - tf will help you do this if necessary. If you are connecting to a location not over the public Internet, (optionally) provide a local address with \fB\-\-loc_ip\fR.
+
+Using . as the image name launches this machine's most recently built docker image.
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Present cli help.
+.TP
+.BR \-v
+Increase verbosity (up to 2)
+.TP
+.BR \-\-loc\ xxx\.20ft\.nz
+Use an (optional) non-default location (fqdn)
+.TP
+.BR \-\-loc_ip\ yyy.local
+An optional (local) ip for the broker
+.TP
+.BR \-\-json\ filename
+Writes a file describing state (deleted on exit)
+.TP
+.BR \-\-browser\ host.name
+Create web browser onto port 80
+.SH EXIT CODES
+tf will also write a verbose explanation to stderr:
+.TP
+.BR 3
+Environment variables malformed
+.TP
+.BR 4
+An attempt has been made to instantiate two instances referencing the same json file
+.TP
+.BR 5
+There was a failure while connecting to the location
+.TP
+.BR 6
+There was a failure selecting a node
+.TP
+.BR 8
+Attempted to use a domain that does not resolve to localhost
+.TP
+.BR 9
+There was a failure while writing the json file (permissions?)
+.SH EXAMPLES
+Launch the most recently built Docker image and attach a browser.
+.PP
+.nf
+.RS
+tf --browser www.example.host .
+.RE
+.fi
+.PP
+Launch nginx container with an environment variable set.
+.PP
+.nf
+.RS
+tf nginx DOMAIN=test.org
+.RE
+.fi
+.PP
+Create from local ID dcff15633c66, report state as json file.
+.PP
+.nf
+.RS
+tf --loc_ip broker.local --json js_filename dcff15633c66
+.RE
+.fi

@@ -1,0 +1,358 @@
+===============
+The 20ft.nz SDK
+===============
+
+.. topic:: Overview
+
+   20ft.nz is a (currently) invite only container hosting service. It is unique in that it does not require an orchestrator and instead provides a CLI and Python SDK to be able to interact with the service directly. It has a focus on security, is explicit about where code runs, and uses Docker's images and development tools.
+
+   For more information email davep@polymath.tech.
+
+
+Introduction
+============
+
+Conventional container platforms require that you interact with an orchestrator - Kubertenes, Marathon, Nomad etc. They all attempt to build a statically described platform and with little or no support for ordering, custom test scripts or location awareness.
+
+20ft is a dynamic platform with an Object Oriented SDK - you write orchestration instructions in the same way you write other software. It's simpler, makes no assumptions about what you are trying to achieve and retains compatibility with Docker containers. The platform garbage collects on disconnection so don't worry about leaking containers, tunnels, addresses or otherwise - it's all taken care of.
+
+
+Architecture
+============
+
+There are four main actors in a 20ft session: The client, the location, the nodes and their containers.
+
+Client
+   A piece of software running the 20ft sdk. This client can be daemonised (run as a service) and can therefore act as a server ... but from 20ft's point of view is still a client of the service. Clients need to connect outwards to the Internet on TCP port 5555 and must be able to resolve DNS TXT records.
+
+Location
+   Effectively the "server" of a client server pair, the location acts as a secured message broker, an image server, a resource manager, and can create TCP tunnels onto individual containers. It needs TCP port 5555 to be open.
+
+Node
+   The nodes can spawn containers and will update the Location with it's current cpu and memory statistics.
+
+Container
+   Once spawned, a container is provided with a non-routable ip and default gateway. Containers objects in the SDK can also fetch a file from the container, place files into the container, spawn a process in the container and fetch container logs.
+
+
+
+===========
+Quick Start
+===========
+
+These installation instructions are broadly written for macOS - other unices are just a package manager away.
+
+* Run the 20ft key installation script you will have been given
+* Install the `Docker development kit <https://www.docker.com/products/docker#/mac>`_
+* Install Python 3, `libnacl <https://nacl.cr.yp.to>`_ and `zmq <http://zeromq.org>`_ (using `homebrew <http://brew.sh>`_) ... ``brew install python3 libsodium zeromq``
+* Install the 20ft sdk ... ``pip3 install tfnz``
+
+My First Container
+==================
+
+Running nginx is the hello world of container orchestration. Launch your first container with ``tf -v --browser nginx``. This may take a little while, it...
+
+* Connects to the default location provided by the key installation script, authenticates both` client and server and `sets up an encrypted tunnel <http://curvezmq.org/page:read-the-docs#toc5>`_.
+* Ensures `nginx <https://hub.docker.com/_/nginx/>`_ is resident in your local docker image library and will pull it if not.
+* Asks the location to choose a node for us then...
+* Asks the node to spawn a container from the nginx image.
+* Once the container is running the location will build a tunnel from a local port to port 80 on the container...
+* Poll until it receives an HTTP 200 then...
+* Opens a browser onto the local port so we can see the container running.
+
+Because we requested verbose logging (``-v``) you should see output something like::
+
+    bash-3.2$ tf -v --browser nginx
+    1231204009.014 INFO     Connecting to: tiny.20ft.nz
+    1231204009.069 INFO     Ensuring layers are uploaded for: nginx
+    1231204009.227 INFO     No layers need uploading for: nginx
+    1231204009.325 INFO     Spawning container: Crx6x786fTrZpo66CtHE7L
+    1231204010.141 INFO     Container is running: Crx6x786fTrZpo66CtHE7L
+    1231204010.142 INFO     Created tunnel object onto: Crx6x786fTrZpo66CtHE7L (7805 -> 80)
+    1231204012.293 INFO     Connected onto: http://localhost:7805/
+
+There, you just launched your first container. Ctrl-C will end the process and clean up resources; and refreshing the browser will show that the container is no longer responding. Perfect.
+
+My First Docker Workflow
+========================
+
+It's all for nothing if we can't change the code that's running, so let's customise our nginx container by replacing the index.html. First, make a new index file::
+
+   bash-3.2$ cat > index.html << EOF
+   > Hello World!
+   > EOF
+
+And a dockerfile to build our new image::
+
+   bash-3.2$ cat > Dockerfile << EOF
+   > FROM nginx
+   > ADD index.html /usr/share/nginx/html/
+   > EOF
+
+Get Docker to build the image::
+
+   bash-3.2$ docker build .
+   Sending build context to Docker daemon   894 kB
+   Step 1 : FROM nginx
+    ---> 05a60462f8ba
+   Step 2 : ADD index.html /usr/share/nginx/html/
+    ---> 91e2255020fe
+   Removing intermediate container 2ef8581c6ad4
+   Successfully built 91e2255020fe
+
+Now we can instruct 20ft to use this image with ``tf -v --browser .`` - note the '.' that lets 20ft know we want the latest build.::
+
+    bash-3.2$ tf -v --browser .
+    0109174501.466 INFO     Connecting to: tiny.20ft.nz
+    0109174501.629 INFO     Ensuring layers are uploaded for: 91e2255020fe
+    0109174501.692 INFO     Getting docker to export layers (this can take a while)...
+    0109174510.963 INFO     Background uploading: 145ef407124b21c7d927f5ab03f71879c94d75df149229bdf0e4ffe4c97fc6d6/layer.tar
+    0109174512.292 INFO     Spawning container: x2LuQnkN4t8vLY5iWTvP6G
+    0109174512.313 INFO     ---> The node is downloading a layer
+    0109174513.867 INFO     Container is running: x2LuQnkN4t8vLY5iWTvP6G
+    0109174513.896 INFO     Created tunnel object onto: u3H8iBpKen3w8kuCzEuTDL (6624 -> 80)
+    0109174515.906 INFO     Connected onto: http://127.0.0.1:6624/
+
+...and a browser opens with "Hello World!". Easy :) Log lines starting with "--->" are messages from the server.
+
+Note that both ``tf --help`` and ``man tf`` do what you would hope.
+
+About User Accounts
+===================
+
+A single user account in 20ft is regarded as a single namespace but, more importantly, a single connection to the location. As a result you may have only one instance of ``tf`` running at once. For more complex arrangements, the Python SDK is required.
+
+====================
+20ft.nz Python 3 SDK
+====================
+
+The vast majority of power in 20ft is contained in the Python SDK. The SDK is BSD licensed so feel free to modify, extend and distribute either the SDK or applications based on it (including commercial applications) without either fee or attribution. The ``tf`` command is also covered by the license.
+
+It is designed to enable the simple construction of orchestration applications including (but not limited to): unit testing; deployment and scaling; and unique container native architectures.
+
+Quickstart examples in Python
+=============================
+
+Let's start by implementing the "first container" and "Docker workflow" examples above::
+
+   import signal
+   from tfnz.location import Location
+
+   location = Location(debug_log=False)
+   node = location.best_node()
+   container = node.spawn('nginx')
+   location.browser_onto(container)
+   signal.pause()
+
+The Location object by default connects to the location in '~/.20ft/default_location', and this behaviour can be changed by merely passing the fqdn of an alternative on which you have an account - for instance Location('chch.20ft.nz'). You may create multiple Location objects but only one per location. debug_log is one of three values: None (the default) does nothing to the `user configured <https://docs.python.org/3/howto/logging.html#logging-basic-tutorial>`_  logging; False sets up Python debugging to the 'info' level (-v on tf); and True sets Python debugging to the 'debug' level (-vv on tf).
+
+Note that storing the node object is optional, and we have a 'last_image' function as part of the tfnz.location module. So the Docker workflow example is::
+
+   import signal
+   from tfnz.location import Location, last_image
+
+   location = Location(debug_log=False)
+   container = location.best_node().spawn(last_image())
+   location.browser_onto(container)
+   signal.pause()
+
+Controlling the end of execution (here using signal.pause) is important. Without it the script will exit and 20ft will remove all the created resources before you've had a chance to use them for anything. You probably don't want this.
+
+Some Logs
+=========
+
+20ft is able to retrieve the container logs which arrive as a list of dictionaries.
+
+Modify our script again::
+
+    import signal
+    import json
+    from tfnz.location import Location, last_image
+
+    location = Location(debug_log=False)
+    container = location.best_node().spawn(last_image())
+    location.browser_onto(container)
+    for log in container.logs():
+        print(json.dumps(log, indent=4))
+    signal.pause()
+
+Run it and your output should look something like this::
+
+    {
+        "time": "2017-01-01T03:20:48.357283000Z",
+        "log": "10.42.0.1 - - [01/Jan/2017:03:20:48 +0000] \"GET / HTTP/1.1\" 200 13 \"-\" \"python-requests/2.11.1\" \"-\"\r\n",
+        "stream": "stdout"
+    }
+
+Put'ing and Fetching files
+==========================
+
+It's important to note that a 20ft "fetch" or "put" relates to a single file and not a compressed archive of an entire filesystem branch (you may have seen this in Docker). While convenient, the file will be loaded into memory so this is not a great way to send large files. They are blocking calls and may throw ValueError. Try... ::
+
+    from tfnz.location import Location, last_image
+
+    location = Location(debug_log=False)
+    container = location.best_node().spawn('nginx')
+    container.put("/usr/new/path", b'Some data')
+    print(container.fetch("/usr/new/path"))
+    print("------------------------------------")
+    print(str(container.fetch("/etc/nginx/nginx.conf"), 'ascii'))
+
+As you can see, placing a file onto a new path causes the path to be created.
+
+Creating TCP Tunnels
+====================
+
+
+
+A Special Case for Webservers
+=============================
+
+=================
+Advanced Spawning
+=================
+
+Pre-boot files
+==============
+
+In reality it's rare that a single configuration, baked into the container image during ``docker build``, is going to be suitable for all situations. A database server will need different user configuration; a load balancer needs to be told *what* to load balance; a container under test needs to be passed fixtures and so on. The 'traditional' Docker way of doing this is to write a script that gets started in lieu of the desired process start, is passed various parameters in environment variables and is expected to render any configuration changes within the container itself before starting the desired process. They're nasty to write; worse to debug; and quickly become informal (ie undocumented) interfaces onto the underlying functionality.
+
+Thankfully there's a better way to effect a dynamic configuration and that's by using pre-boot files. These are just text files that are passed as part of the ``spawn`` call and are written into the container immediately prior to boot. They are nothing more than renders of the application's configuration files - and as such can be created with anything that will render a template. Here is a simple implementation...::
+
+    import signal
+    from tfnz.location import Location
+
+    location = Location(debug_log=True)
+    preboot = {'/usr/share/nginx/html/index.html': 'Hello World!'}
+    container = location.best_node().spawn('nginx', pre_boot_files=preboot)
+    location.browser_onto(container)
+    signal.pause()
+
+Obviously you are free to debug these renders client side, and in Python (instead of bash). Preboot files also make an excellent basis for higher level components i.e. a single 'LoadBalancer' class that uses pre-boot files as it's implementation.
+
+Launching Processes in Containers
+=================================
+
+Processes, async replies
+
+Treating Containers as Pods
+===========================
+
+
+
+
+
+
+
+
+Concurrent Booting
+==================
+
+20ft containers are started asynchronously - that is to say that the actions of asking a container to start and the container having started are, from the perspective of the user, completely decoupled. As with all things this is obvious given an example:
+
+The image used in these examples is a fairly heavy Apache/Mezzanine/Django/Postgres stack with non-trivial startup costs. Consider the synchronous case::
+
+    location = Location('tiny.20ft.nz', debug_log=False)
+    location.ensure_image_uploaded('337c501c333c')
+    logging.info("-----Starting")
+    for n in range(0, 10):
+        container = location.best_node().spawn('337c501c333c')
+        location.wait_http_200(container, fqdn="www.atomicdroplet.com")
+    logging.info("-----Finished")
+    signal.pause()
+
+Results in::
+
+    1207165016.497 INFO     Connecting to: tiny.20ft.nz
+    1207165016.609 INFO     Location has sent resource offer
+    1207165016.610 INFO     Ensuring layers are uploaded for: 337c501c333c
+    1207165016.684 INFO     No layers need uploading for: 337c501c333c
+    1207165016.684 INFO     -----Starting
+    1207165016.763 INFO     Spawning container: jcSGEaxhkKxQwwHomowbdb
+    1207165016.763 INFO     Waiting on http 200: jcSGEaxhkKxQwwHomowbdb
+    .....snip
+    1207165125.548 INFO     Container is running: uvUiGjDMZJ3yanGFoCHJVb
+    1207165125.549 INFO     Created tunnel object onto: uvUiGjDMZJ3yanGFoCHJVb (3365 -> 80)
+    1207165132.579 INFO     Connected onto: http://www.atomicdroplet.com:3365/
+    1207165132.579 INFO     -----Finished
+
+76.9 seconds. In parallel::
+
+    location = Location('tiny.20ft.nz', debug_log=False)
+    location.ensure_image_uploaded('337c501c333c')
+    containers = []
+    logging.info("-----Starting")
+    for n in range(0, 10):
+        container = location.best_node().spawn('337c501c333c')
+        containers.append(container)
+    for container in containers:
+        location.wait_http_200(container, fqdn="www.atomicdroplet.com")
+    logging.info("-----Finished")
+    signal.pause()
+
+Gives::
+
+    1207165538.478 INFO     Connecting to: tiny.20ft.nz
+    1207165538.584 INFO     Location has sent resource offer
+    1207165538.584 INFO     Ensuring layers are uploaded for: 337c501c333c
+    1207165538.736 INFO     No layers need uploading for: 337c501c333c
+    1207165538.736 INFO     -----Starting
+    1207165538.787 INFO     Spawning container: z8JprcSwZd5wt8k8jSKqFE
+    1207165538.837 INFO     Spawning container: aSXB2RpMcA2sihyRzvf2cj
+    1207165538.900 INFO     Spawning container: EqSNk64z2WBUiWpjMCKtA7
+    ....
+    1207165541.372 INFO     Container is running: fs5SCYGpqE6prAtfGwj6w3
+    1207165541.900 INFO     Container is running: diosgkCANemzCV4GcPjsz4
+    1207165542.148 INFO     Container is running: UyxWTxCx6jRBdHJwbMA2q8
+    1207165542.736 INFO     Container is running: VAkyf9jZNZv7Fk6nrphGci
+    ....
+    1207165555.126 INFO     Connected onto: http://www.atomicdroplet.com:6052/
+    1207165555.126 INFO     Waiting on http 200: GUQxBDh9WyCpmBt3xktit2
+    1207165555.132 INFO     Created tunnel object onto: GUQxBDh9WyCpmBt3xktit2 (1448 -> 80)
+    1207165556.523 INFO     Connected onto: http://www.atomicdroplet.com:1448/
+    1207165556.523 INFO     Waiting on http 200: VAkyf9jZNZv7Fk6nrphGci
+    1207165556.528 INFO     Created tunnel object onto: VAkyf9jZNZv7Fk6nrphGci (1452 -> 80)
+    1207165557.990 INFO     Connected onto: http://www.atomicdroplet.com:1452/
+    1207165557.990 INFO     -----Finished
+
+19.25 seconds - one quarter the time.
+
+Obviously this is a somewhat contrived example but the lesson is simple: If you can start containers ahead of when you need them, you will enjoy a (very) significant performance boost.
+
+
+Production and TBD
+==================
+
+There is currently no explicit support for production workloads. However, there is nothing preventing you from using a 'localhost' tunnel and some means by which this tunnel can be published onto the wider Internet. All that then remains is to use a favourite process monitor (monit, systemd, smf) to manage the script in exactly the same way as any other server.
+
+The ability to take an ip/port on the location and attach it to a container is coming.
+
+Not yet implemented are inter-container connections (and firewalling) or persistent disks.
+
+==============
+Known Problems
+==============
+
+**Apache 2** needs ``AcceptFilter http none`` somewhere in it's configuration.
+
+**PostgreSQL** needs ``dynamic_shared_memory_type = none`` in postgresql.conf.
+
+=========
+Reference
+=========
+
+
+.. autoclass:: tfnz.location.Location
+    :members:
+
+.. autoclass:: tfnz.node.Node
+    :members:
+
+.. autoclass:: tfnz.container.Container
+    :members:
+
+.. autoclass:: tfnz.tunnel.Tunnel
+    :members:
+
+.. autoclass:: tfnz.process.Process
+    :members:
