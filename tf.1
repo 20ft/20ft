@@ -7,6 +7,8 @@ tf - launch a container on 20ft.nz
 [\fB\-v\fR]
 [\fB\-\-loc \fIxxx.20ft.nz\fR]
 [\fB\-\-loc_ip \fIyyy.local\fR]
+[\fB\-\-bind \fIn\fR]
+[\fB\-\-offset \fIn\fR]
 [\fB\-\-latest\fR]
 [\fB\-\-json \fIfilename\fR]
 [\fB\-\-browser\fR
@@ -34,11 +36,17 @@ Use an (optional) non-default location (fqdn)
 .BR \-\-loc_ip\ yyy.local
 An optional (local) ip for the broker
 .TP
+.BR \-\-bind\ filename
+Binds to an address other than localhost
+.TP
+.BR \-\-offset\ filename
+Applies a local offset to the container exposed port
+.TP
 .BR \-\-json\ filename
 Writes a file describing state (deleted on exit)
 .TP
 .BR \-\-browser\ host.name
-Create web browser onto port 80
+Create web browser onto container port 80
 .SH EXIT CODES
 tf will also write a verbose explanation to stderr:
 .TP
@@ -54,11 +62,17 @@ There was a failure while connecting to the location
 .BR 6
 There was a failure selecting a node
 .TP
+.BR 7
+There was a failure while spawning a container
+.TP
 .BR 8
 Attempted to use a domain that does not resolve to localhost
 .TP
 .BR 9
 There was a failure while writing the json file (permissions?)
+.TP
+.BR 9
+Provided offset was not an integer
 .SH EXAMPLES
 Launch the most recently built Docker image and attach a browser.
 .PP

@@ -76,6 +76,7 @@ class Node:
         # triggered when a container goes from spawning to running
         if 'status' in msg.params and msg.params['status'] == 'running':
             logging.info("Container is running: " + str(msg.uuid, 'ascii'))
+            self.containers[msg.uuid].ip = msg.params
             self.containers[msg.uuid].is_ready()
 
     def __repr__(self):

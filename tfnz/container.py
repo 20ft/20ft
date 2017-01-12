@@ -31,6 +31,7 @@ class Container(Waitable):
         self.processes = {}
         self.docker_config = docker_config
         self.env = env
+        self.ip = None
 
     def destroy(self):
         """Destroy this container."""

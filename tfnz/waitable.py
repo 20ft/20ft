@@ -27,7 +27,7 @@ class Waitable:
 
     def wait_until_ready(self):
         # this lock is used for waiting on while uploading layers, needs to be long
-        result = self.wait_lock.acquire(timeout=60)
+        result = self.wait_lock.acquire(timeout=120)
         self.wait_lock.release()
         return result
 

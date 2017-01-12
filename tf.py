@@ -25,6 +25,8 @@ parser = argparse.ArgumentParser(prog='tf')
 parser.add_argument('-v', action='count', help='Increase verbosity (up to 2)')
 parser.add_argument('--loc', help='Use a non-default location (fqdn)', metavar='xxx.20ft.nz')
 parser.add_argument('--loc_ip', help='A non-dns ip for the broker', metavar='yyy.local')
+parser.add_argument('--bind', help='Bind to an address other than localhost', metavar='aa.bb.cc.dd')
+parser.add_argument('--offset', help='An offset to apply from the container exposed port to local', default=0)
 parser.add_argument('--json', help='Writes a file describing state (deleted on exit)', metavar="filename")
 parser.add_argument('--browser', action="store_true", help='Create web browser onto port 80')
 parser.add_argument('--domain', help='Use a domain name other than \'localhost\' in http', metavar="fake.domain")
@@ -90,7 +92,13 @@ if not args.browser:
     for exposed in ports.keys():
         if len(exposed) < 4 or exposed[-4:] != '/tcp':
             continue
-        tunnels.append(location.tunnel_onto(container, int(exposed[:-4])))
+        try:
+            tnl = location.tunnel_onto(container, int(exposed[:-4]),
+                                       localport=(int(exposed[:-4]) + int(args.offset)),
+                                       bind=args.bind)
+        except ValueError:
+            print("Offset needs to be an integer", file=sys.stderr)
+            exit(10)
 
 # finally
 etc_hosts = None

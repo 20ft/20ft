@@ -106,7 +106,7 @@ Now we can instruct 20ft to use this image with ``tf -v --browser .`` - note the
     0109174501.466 INFO     Connecting to: tiny.20ft.nz
     0109174501.629 INFO     Ensuring layers are uploaded for: 91e2255020fe
     0109174501.692 INFO     Getting docker to export layers (this can take a while)...
-    0109174510.963 INFO     Background uploading: 145ef407124b21c7d927f5ab03f71879c94d75df149229bdf0e4ffe4c97fc6d6/layer.tar
+    0109174510.963 INFO     Background uploading: 145ef...fc6d6/layer.tar
     0109174512.292 INFO     Spawning container: x2LuQnkN4t8vLY5iWTvP6G
     0109174512.313 INFO     ---> The node is downloading a layer
     0109174513.867 INFO     Container is running: x2LuQnkN4t8vLY5iWTvP6G
@@ -122,6 +122,20 @@ About User Accounts
 
 A single user account in 20ft is regarded as a single namespace but, more importantly, a single connection to the location. As a result you may have only one instance of ``tf`` running at once. For more complex arrangements, the Python SDK is required.
 
+Production
+==========
+
+Currently 20ft is designed as a compute resource and hence has no explicit support for public Internet connectivity. The best way to create a server for 20ft is to:
+
+* Create a VM on a public Internet provider. The VM will require almost zero compute power so the smallest available instance will do perfectly well.
+* Use monit or similar process manager to...
+* Run ``tf -v --bind aa.bb.cc.dd --offset n image`` to run the container and create tunnels onto its exposed ports.
+
+The offset is optional and maps (for example) container port 80 to local port 8080 (with an offset of 8000). This is purely so tf does not need to be run as root. This technique works equally well for Intranets or the public Internet. For the public Internet is recommended that web servers ve run behind a proxy or source protecting CDN such as `Cloudflare <https://cloudflare.com/>`_ or `Fastly <https://fastly.com/>`_ (both of which provide low volume accounts free of charge).
+
+The ability to directly bind exposed ports onto an Internet addressable IP will be available soon.
+
+
 ====================
 20ft.nz Python 3 SDK
 ====================
@@ -129,6 +143,8 @@ A single user account in 20ft is regarded as a single namespace but, more import
 The vast majority of power in 20ft is contained in the Python SDK. The SDK is BSD licensed so feel free to modify, extend and distribute either the SDK or applications based on it (including commercial applications) without either fee or attribution. The ``tf`` command is also covered by the license.
 
 It is designed to enable the simple construction of orchestration applications including (but not limited to): unit testing; deployment and scaling; and unique container native architectures.
+
+All the examples below are complete programs. They can be run by pasting the example into a text file (called, say, 'scratch.py') then running with ``python3 scratch.py``. You'll see that the examples are all started with ``debug_log=False``. If started with ``debug_log=True`` you will get, essentially, verbose logging. The default doesn't log at all.
 
 Quickstart examples in Python
 =============================
@@ -176,18 +192,10 @@ Modify our script again::
         print(json.dumps(log, indent=4))
     signal.pause()
 
-Run it and your output should look something like this::
-
-    {
-        "time": "2017-01-01T03:20:48.357283000Z",
-        "log": "10.42.0.1 - - [01/Jan/2017:03:20:48 +0000] \"GET / HTTP/1.1\" 200 13 \"-\" \"python-requests/2.11.1\" \"-\"\r\n",
-        "stream": "stdout"
-    }
-
-Put'ing and Fetching files
+Putting and Fetching files
 ==========================
 
-It's important to note that a 20ft "fetch" or "put" relates to a single file and not a compressed archive of an entire filesystem branch (you may have seen this in Docker). While convenient, the file will be loaded into memory so this is not a great way to send large files. They are blocking calls and may throw ValueError. Try... ::
+It's important to note that a 20ft "fetch" or "put" relates to a single file and not an archive of an entire filesystem branch (you may have seen this in Docker). While convenient, the file will be loaded into memory so this is not a great way to send large files. They are blocking calls and may throw ValueError. Try... ::
 
     from tfnz.location import Location, last_image
 
@@ -203,10 +211,33 @@ As you can see, placing a file onto a new path causes the path to be created.
 Creating TCP Tunnels
 ====================
 
+TCP (only) tunnels can be created from localhost onto a container. The local port number can be either set or left blank (in which case it is chosen for you and becomes the ``.localport`` property of the tunnel)... ::
 
+    import signal
+    from tfnz.location import Location
+
+    location = Location(debug_log=False)
+    container = location.best_node().spawn('nginx')
+    tnl = location.tunnel_onto(container, 80, localport=1234)
+    signal.pause()
+
+Note the sample code ends with signal.pause. If this is missing the the script finishes and the resources garbage collected - including the container itself. If you the connect a browser onto the desired port it will *not* have the webserver running. This is an easy mistake to make. Note as well it is the *location* that creates the tunnel and not the container.
 
 A Special Case for Webservers
 =============================
+
+The above example is a generalised case TCP tunnel and can be used for web, ssh, smtp, whatever. There are also two specialised tunnel factories specifically for webservers: Location.wait_http_200() and Location.browser_onto(). The first case creates a tunnel as normal then blocks execution and polls the other end until it receives a reply with HTTP code 200. You can set a domain name for webapps that need a "Host:" header to be send, and a path to the resource to fetch can also be passed.
+
+The second option does exactly the same thing except it also launches a web browser onto the newly created tunnel. ::
+
+    import signal
+    from tfnz.location import Location, last_image
+
+    location = Location(debug_log=False)
+    container = location.best_node().spawn('nginx')
+    tnl = location.browser_onto(container)
+    signal.pause()
+
 
 =================
 Advanced Spawning
@@ -230,20 +261,52 @@ Thankfully there's a better way to effect a dynamic configuration and that's by 
 
 Obviously you are free to debug these renders client side, and in Python (instead of bash). Preboot files also make an excellent basis for higher level components i.e. a single 'LoadBalancer' class that uses pre-boot files as it's implementation.
 
-Launching Processes in Containers
-=================================
+Launching Processes in Containers (aka Pods)
+============================================
 
-Processes, async replies
+"Container style" launching of a single server process obviously doesn't cover all use-cases so it's possible to launch a process within a pre-booted container. There can be multiple processes running concurrently and they can be run either synchronously to completion, or asynchronously with callbacks for the stdout stream and process termination. Some examples: Synchronously... ::
 
-Treating Containers as Pods
-===========================
+    from tfnz.location import Location
 
+    location = Location(debug_log=False)
+    container = location.best_node().spawn('nginx')
+    location.wait_http_200(container)
+    data = container.spawn_process('ps faxu').wait_until_complete()
+    print(str(data, 'ascii'))
 
+Asynchronously... ::
 
+    import time
+    from tfnz.location import Location
 
+    def dc(obj, data):
+        print(str(data, 'ascii'), end='')
 
+    def tc(obj):
+        print("Vmstat terminated")
 
+    def sleep_tc(obj):
+        print("---Sleep terminated---")
 
+    location = Location(debug_log=False)
+    container = location.best_node().spawn('nginx')
+    vmstat = container.spawn_process('vmstat 1', data_callback=dc, termination_callback=tc)
+    sleep = container.spawn_process('sleep 3', termination_callback=sleep_tc)
+    time.sleep(10)
+    vmstat.destroy()
+
+The concept of multiple processes in a single container can be implemented by starting the container 'asleep' then launching processes as and when you see fit. This is illustrated below... ::
+
+    import signal
+    from tfnz.location import Location
+
+    location = Location(debug_log=False)
+    container = location.best_node().spawn('nginx', sleep=True)
+    print(str(container.spawn_process('ps').wait_until_complete(), 'ascii'))
+    process = container.spawn_process('nginx')
+    location.wait_http_200(container)
+    print(str(container.spawn_process('ps').wait_until_complete(), 'ascii'))
+    signal.pause()
 
 Concurrent Booting
 ==================
@@ -320,18 +383,61 @@ Gives::
 Obviously this is a somewhat contrived example but the lesson is simple: If you can start containers ahead of when you need them, you will enjoy a (very) significant performance boost.
 
 
-Production and TBD
-==================
+=========================
+Unit Testing with PyCharm
+=========================
 
-There is currently no explicit support for production workloads. However, there is nothing preventing you from using a 'localhost' tunnel and some means by which this tunnel can be published onto the wider Internet. All that then remains is to use a favourite process monitor (monit, systemd, smf) to manage the script in exactly the same way as any other server.
+PyCharm offers built in support for unit testing. Writing unit tests for containers on 20ft is no different from any other 20ft script. However, it's worth pointing out that the test case class can initialise itself just once, then use the resources in the remainder of the script. For example... ::
 
-The ability to take an ip/port on the location and attach it to a container is coming.
+   import requests
+   from unittest import TestCase, main
+   from tfnz.location import Location
 
-Not yet implemented are inter-container connections (and firewalling) or persistent disks.
+
+   class TfTest(TestCase):
+
+       @classmethod
+       def setUpClass(cls):
+           cls.location = Location(debug_log=False)
+           cls.location.ensure_image_uploaded('nginx')
+
+       def test_spawn_preboot(self):
+           # write configuration files before we boot
+           preboot = {'/usr/share/nginx/html/index.html': 'Hello World!'}
+           container = TfTest.location.best_node().spawn('nginx', pre_boot_files=preboot, no_image_check=True)
+           self.assertTrue(b'Hello World!' in container.fetch('/usr/share/nginx/html/index.html'))
+
+       def test_tunnels_http(self):
+           container = TfTest.location.best_node().spawn('nginx', no_image_check=True)
+
+           # creating a tunnel after http 200
+           tnl = self.location.wait_http_200(container)
+           r = requests.get('http://127.0.0.1:' + str(tnl.localport))
+           self.assertTrue('<title>Welcome to nginx!</title>' in r.text, 'Did not get the expected reply from container')
+
+   if __name__ == '__main__':
+       main()
+
+So the Location object is created only once, and we ensure the image under test is uploaded just once instead of being on every spawn.
+
+To run this:
+
+* Create a pure Python project in PyCharm.
+* Add the script above (not that you will need the requests package installed)
+* Select "Edit Configurations" from the toolbar
+* Click the '+' button to create a new configuration - select "Python tests -> Unittests"
+* Enter the name of your script into the "Script" box, leave everything else alone.
+* Click OK
+
+You should now have a green 'Run' button next to the configuration, clicking it should create something like this:
+
+.. image:: _static/unit_test.png
 
 ==============
 Known Problems
 ==============
+
+Unfortunately there are still some small incompatibilities between container infrastructures. Neither of these two fixes is unique to 20ft...
 
 **Apache 2** needs ``AcceptFilter http none`` somewhere in it's configuration.
 

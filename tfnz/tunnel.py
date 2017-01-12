@@ -30,7 +30,7 @@ class Tunnel(Waitable):
     Nothing end user callable - interact with the proxy through TCP (or call localport if you didn't set it explicitly).
     Note that apparently plaintext traffic through the tunnel is still encrypted on the wire."""
 
-    def __init__(self, connection, node, container, port, localport):
+    def __init__(self, connection, node, container, port, localport, bind):
         super().__init__()
         # tell the location what we want
         self.uuid = shortuuid.uuid().encode('ascii')
@@ -39,6 +39,7 @@ class Tunnel(Waitable):
         self.container = container
         self.port = port
         self.localport = localport
+        self.bind = bind
         self.fd = None
         self.proxies = {}
 
@@ -48,7 +49,7 @@ class Tunnel(Waitable):
         self.socket.setblocking(False)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            self.socket.bind(("127.0.0.1", self.localport))
+            self.socket.bind(("127.0.0.1" if self.bind is None else self.bind, self.localport))
         except OSError:
             pass
         self.socket.listen()

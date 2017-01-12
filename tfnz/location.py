@@ -145,12 +145,13 @@ class Location(Waitable):
 
         return rtn
 
-    def tunnel_onto(self, container: Container, port: int, localport: int=0) -> Tunnel:
+    def tunnel_onto(self, container: Container, port: int, localport: int=0, bind: str=None) -> Tunnel:
         """Creates a TCP proxy between localhost and a container.
 
         :param container: The container object.
         :param port: The TCP port on the container to connect to.
         :param localport: Optional choice of local port no.
+        :param bind: Optionally bind to an address other than localhost.
         :returns: A Tunnel object.
 
         This call does no checking to ensure the server side is ready -
@@ -165,7 +166,7 @@ class Location(Waitable):
 
         # create the tunnel
         container.wait_until_ready()  # otherwise the IP address may not exist on the node and creation will fail
-        tunnel = Tunnel(self.conn, container.parent(), container, port, localport)
+        tunnel = Tunnel(self.conn, container.parent(), container, port, localport, bind)
         self.tunnels[tunnel.uuid] = tunnel
         tunnel.connect()  # connection done 'late' so we can get the tunnel into tunnels first
         return tunnel
@@ -307,16 +308,6 @@ def last_image() -> str:
     return str(dkr_result[:12], 'ascii')
 
 
-def intro():
-    print('You have a location object called "loc" and a node "node".')
-    print('Try:')
-    print('    container = node.spawn("nginx")')
-    print('    tunnel = loc.browser_onto(container)')
-    print('    proc = container.spawn_process("ps faxu")')
-    print('    container.destroy()')
-    print('    exit()')
-
-
 def uncaught_exception(exctype, value, tb):
     if exctype is KeyboardInterrupt:
         logging.info("Caught Ctrl-C, closing")  # clearing server side objects done by server
@@ -325,5 +316,3 @@ def uncaught_exception(exctype, value, tb):
     exit(1)
 
 sys.excepthook = uncaught_exception
-
-logging.getLogger("requests").setLevel(logging.WARNING)
