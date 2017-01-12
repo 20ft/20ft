@@ -183,7 +183,7 @@ class Location(Waitable):
 
         Note that webservers running virtual hosts need to be connected to with a hostname - hence passing the fqdn.
         If you're testing a (for example) CMS and keep getting the default page, you probably need to set this.
-        Note that you will need to locally set that fqdn to resolve to 127.0.0.1. See tf.py for an example.
+        Note that you will need to locally set that fqdn to resolve to 127.0.0.1. See tf for an example.
 
         Connection attempts are 2/sec for 30 seconds"""
 
