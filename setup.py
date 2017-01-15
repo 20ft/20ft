@@ -14,13 +14,13 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 from setuptools import setup
 setup(name='tfnz',
-      version='0.9.1',
+      version='0.9.2',
       author='David Preece',
       author_email='davep@polymath.tech',
       url='https://20ft.nz',
       license='BSD',
       packages=['tfnz'],
-      install_requires=['pyzmq', 'libnacl', 'py3dns', 'requests', 'shortuuid'],
+      install_requires=['pyzmq', 'libnacl', 'py3dns', 'requests', 'requests-unixsocket', 'shortuuid'],
       description='SDK for 20ft.nz',
       long_description="The SDK for the 20ft.nz container infrastructure. " +
                        "This package contains the SDK, the 'tf' command line tool and man page. " +

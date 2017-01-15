@@ -6,20 +6,21 @@ tf - launch a container on 20ft.nz
 [\fB\-h\fR]
 [\fB\-v\fR]
 [\fB\-\-loc \fIxxx.20ft.nz\fR]
-[\fB\-\-loc_ip \fIyyy.local\fR]
+[\fB\-\-local_ip \fIyyy.local\fR]
 [\fB\-\-bind \fIn\fR]
 [\fB\-\-offset \fIn\fR]
 [\fB\-\-latest\fR]
 [\fB\-\-json \fIfilename\fR]
 [\fB\-\-browser\fR
-[\fB\-\-domain \fIhost.name\fR]]
+[\fB\-\-domain \fIhost.name\fR]
+[\fB\-\-path \fI/where/ever\fR]]
 \fB\fIimage\fR
 [\fB\fIENVIRONMENT=\fIvalue \fR[\fB\fIENVIRONMENT=VALUE \fR...]]
 .SH DESCRIPTION
 .B tf
-Launches containers on 20ft.nz, passes the environment variables and creates localhost tunnels to ports 'exposed' within the Docker config. Use \fB\-\-loc\fR to specify a non-default location and \fB\-\-loc_ip\fR to specify a connection ip other than that obtained by a dns lookup.
+Launches containers on 20ft.nz, passes the environment variables and creates localhost tunnels to ports 'exposed' within the Docker config. Use \fB\-\-loc\fR to specify a non-default location and \fB\-\-local_ip\fR to specify a connection ip other than that obtained by a dns lookup.
 
-Find localhost addresses using the \fB\-\-json\fR file or directly attach a browser with \fB\-\-browser\fR with an optional hostname sent as the HTTP Host header. Note that for the browser to attach the hostname needs to resolve to 127.0.0.1 - tf will help you do this if necessary. If you are connecting to a location not over the public Internet, (optionally) provide a local address with \fB\-\-loc_ip\fR.
+Find localhost addresses using the \fB\-\-json\fR file or directly attach a browser with \fB\-\-browser\fR with an optional hostname sent as the HTTP Host header. Note that for the browser to attach the hostname needs to resolve to 127.0.0.1 - tf will help you do this if necessary. If you are connecting to a location not over the public Internet, (optionally) provide a local address with \fB\-\-local_ip\fR.
 
 Using . as the image name launches this machine's most recently built docker image.
 .SH OPTIONS
@@ -33,7 +34,7 @@ Increase verbosity (up to 2)
 .BR \-\-loc\ xxx\.20ft\.nz
 Use an (optional) non-default location (fqdn)
 .TP
-.BR \-\-loc_ip\ yyy.local
+.BR \-\-local_ip\ yyy.local
 An optional (local) ip for the broker
 .TP
 .BR \-\-bind\ filename
@@ -47,6 +48,12 @@ Writes a file describing state (deleted on exit)
 .TP
 .BR \-\-browser\ host.name
 Create web browser onto container port 80
+.TP
+.BR \-\-domain\ some.domain
+Pass to replace 'localhost' in the http server-name directive
+.TP
+.BR \-\-path\ /where/ever
+The initial path to request from the webserver.
 .SH EXIT CODES
 tf will also write a verbose explanation to stderr:
 .TP
@@ -94,6 +101,6 @@ Create from local ID dcff15633c66, report state as json file.
 .PP
 .nf
 .RS
-tf --loc_ip broker.local --json js_filename dcff15633c66
+tf --local_ip broker.local --json js_filename dcff15633c66
 .RE
 .fi

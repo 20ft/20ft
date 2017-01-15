@@ -50,10 +50,11 @@ class Node:
 
         # Make it go...
         descr = description(image)
-        del descr[0]['ContainerConfig']
+        if 'ContainerConfig' in descr:
+            del descr['ContainerConfig']
         if sleep:
-            descr[0]['Config']['Entrypoint'] = None
-            descr[0]['Config']['Cmd'] = ['sleep', 'inf']
+            descr['Config']['Entrypoint'] = None
+            descr['Config']['Cmd'] = ['sleep', 'inf']
         uuid = self.conn().send_cmd(b'spawn_container',
                                     {'node': str(self.pk, 'ascii'),
                                      'layer_stack': Sender.layer_stack(image),
@@ -62,7 +63,7 @@ class Node:
                                      'pre_boot_files': pre_boot_files}, reply_callback=self.container_status_update)
 
         # Create the container object
-        self.containers[uuid] = Container(self, image, uuid, descr[0], env)
+        self.containers[uuid] = Container(self, image, uuid, descr, env)
         logging.info("Spawning container: " + str(uuid, 'ascii'))
 
         return self.containers[uuid]

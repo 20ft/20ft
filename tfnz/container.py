@@ -15,9 +15,14 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 import logging
 import json
 import weakref
+import requests
+import requests_unixsocket
 from subprocess import PIPE, Popen, TimeoutExpired
 from .waitable import Waitable
+from .tunnel import Tunnel
 from .process import Process
+
+requests_unixsocket.monkeypatch()
 
 
 class Container(Waitable):
@@ -25,6 +30,7 @@ class Container(Waitable):
     def __init__(self, parent, image: str, uuid: bytes, docker_config: dict=None, env: dict=None):
         super().__init__()
         self.parent = weakref.ref(parent)
+        self.location = weakref.ref(self.parent().parent())
         self.conn = weakref.ref(self.parent().conn())
         self.image = image
         self.uuid = uuid
@@ -44,6 +50,56 @@ class Container(Waitable):
             if tun.container is self:
                 loc.destroy_tunnel(tun)
         logging.info("Destroyed container: " + str(self.uuid, 'ascii'))
+
+    def attach_tunnel(self, dest_port: int, localport: int=None, bind: str=None) -> Tunnel:
+        """Creates a TCP proxy between localhost and a container.
+
+        :param dest_port: The TCP port on the container to connect to.
+        :param localport: Optional choice of local port no.
+        :param bind: Optionally bind to an address other than localhost.
+        :returns: A Tunnel object.
+
+        This call does no checking to ensure the server side is ready -
+        but a failed connection will not destroy the tunnel itself and hence it can be used for polling.
+        If the optional port number is left as default, one will be automatically chosen
+        (and set as .localport on the created Tunnel).
+        """
+        return self.location().tunnel_onto(self, dest_port, localport, bind)
+
+    def attach_browser(self, dest_port: int=80, fqdn: str='localhost', path: str='') -> Tunnel:
+        """Attaches a web browser onto port 80 of the container.
+
+        :param dest_port: Override the default destination port.
+        :param fqdn: A host name to use in the http request.
+        :param path: A path on the server - appended to /
+        :returns: A Tunnel object.
+
+        Note that webservers running virtual hosts need to be connected to with a hostname - hence passing the fqdn.
+        If you're testing a (for example) CMS and keep getting the default page, you probably need to set this.
+        Note that you will need to locally set that fqdn to resolve to 127.0.0.1. See tf for an example.
+
+        Connection attempts are 2/sec for 30 seconds"""
+        loc = self.location()
+        return loc.browser_onto(self, dest_port, fqdn, path, True)
+
+    def wait_http_200(self, dest_port: int=80, fqdn: str='localhost', path: str='') -> Tunnel:
+        """Poll until an http 200 is returned.
+
+        :param dest_port: Override the default port.
+        :param fqdn: A host name to use in the http request.
+        :param path: A path on the server - appended to /
+        :returns: A Tunnel object.
+
+        Same notes as for 'attach_browser'."""
+        return self.location().browser_onto(self, dest_port, fqdn, path, False)
+
+    def destroy_tunnel(self, tunnel: Tunnel):
+        """Destroy a tunnel
+
+        :param tunnel: The tunnel to be destroyed.
+
+        The object reference by tunnel will be unusable on return."""
+        return self.location().destroy_tunnel(tunnel)
 
     def spawn_process(self, remote_command, data_callback=None, termination_callback=None) -> Process:
         """Spawn a process within a container, receives data asynchronously via a callback.
@@ -134,11 +190,7 @@ class Container(Waitable):
 
 def description(docker_image_id) -> dict:
     # Get metadata from local Docker.
-    inspect_obj = Popen(["/usr/local/bin/docker", "inspect", docker_image_id], stdout=PIPE, stderr=PIPE)
-    try:
-        out = inspect_obj.communicate(timeout=5)
-    except TimeoutExpired:
-        raise RuntimeError("The docker daemon is not responding to an 'inspect' command.")
-    if out[1] != b'':
-        raise RuntimeError("Docker cannot find image: " + docker_image_id)
-    return json.loads(str(out[0], 'ascii'))
+    url_base = 'http+unix://%2Fvar%2Frun%2Fdocker.sock'
+    r = requests.get('%s/images/%s/json' % (url_base, docker_image_id))
+    obj = json.loads(r.text)
+    return obj

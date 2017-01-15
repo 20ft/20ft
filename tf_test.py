@@ -20,7 +20,7 @@ class TfTest(TestCase):
         cls.image = 'nginx'
         cls.launched_process = b'nginx: worker process'
         cls.root_reply_contains = b'<title>Welcome to nginx!</title>'
-        cls.acceptable_boot_time = 5
+        cls.acceptable_boot_time = 10
         cls.location = Location(debug_log=False)
         cls.location.ensure_image_uploaded(cls.image)
 
@@ -57,8 +57,8 @@ class TfTest(TestCase):
 
         # did it use the right docker config?
         ideal = description(TfTest.image)
-        del ideal[0]['ContainerConfig']  # we ditch this because it's duplicated
-        self.assertTrue(json.dumps(container.docker_config) == json.dumps(ideal[0]),
+        del ideal['ContainerConfig']  # we ditch this because it's duplicated
+        self.assertTrue(json.dumps(container.docker_config) == json.dumps(ideal),
                         'Container launched with wrong docker config')
 
     def test_spawn_asleep(self):
@@ -152,7 +152,7 @@ class TfTest(TestCase):
         container = TfTest.location.best_node().spawn(TfTest.image, no_image_check=True)
 
         # creating a tunnel after http 200
-        tnl = self.location.wait_http_200(container)
+        tnl = container.wait_http_200()
         reply = None
         try:
             reply = subprocess.check_output(['curl', 'http://127.0.0.1:' + str(tnl.localport)],
@@ -168,8 +168,9 @@ class TfTest(TestCase):
 
     def test_resource_management(self):
         # can the "good" container get work done while the "bad" container is being bad?
-        bad_container = TfTest.location.best_node().spawn(TfTest.image, no_image_check=True)
-        good_container = TfTest.location.best_node().spawn(TfTest.image, no_image_check=True)
+        node = TfTest.location.best_node()  # won't interfere at all if they're not on the same node
+        bad_container = node.spawn(TfTest.image, no_image_check=True)
+        good_container = node.spawn(TfTest.image, no_image_check=True)
 
         # eat cpu
         processes = []
@@ -197,9 +198,6 @@ class TfTest(TestCase):
         time.sleep(10)
         ps_result = good_container.spawn_process('ps ax').wait_until_complete()
         self.assertTrue(TfTest.launched_process in ps_result)
-
-        bad_container.destroy()
-        good_container.destroy()
 
 
 if __name__ == '__main__':

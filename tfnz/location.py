@@ -145,23 +145,10 @@ class Location(Waitable):
 
         return rtn
 
-    def tunnel_onto(self, container: Container, port: int, localport: int=0, bind: str=None) -> Tunnel:
-        """Creates a TCP proxy between localhost and a container.
-
-        :param container: The container object.
-        :param port: The TCP port on the container to connect to.
-        :param localport: Optional choice of local port no.
-        :param bind: Optionally bind to an address other than localhost.
-        :returns: A Tunnel object.
-
-        This call does no checking to ensure the server side is ready -
-        but a failed connection will not destroy the tunnel itself and hence it can be used for polling.
-        If the optional port number is left as default, one will be automatically chosen
-        (and set as .localport on the created Tunnel).
-        """
+    def tunnel_onto(self, container, port, localport, bind) -> Tunnel:
         self.wait_until_ready()
         container.wait_until_ready()
-        if localport == 0:
+        if localport is None:
             localport = Location.find_unused_local_port()
 
         # create the tunnel
@@ -171,29 +158,14 @@ class Location(Waitable):
         tunnel.connect()  # connection done 'late' so we can get the tunnel into tunnels first
         return tunnel
 
-    def browser_onto(self, container, dest_port: int=80, fqdn: str='127.0.0.1', path: str='',
-                     actual_browser: bool=True) -> Tunnel:
-        """Attaches a web browser onto port 80 of the passed container.
-
-        :param container: A Container object.
-        :param dest_port: Override the default port.
-        :param fqdn: A host name to use in the http request.
-        :param path: A path on the server - appended to /
-        :returns: A Tunnel object.
-
-        Note that webservers running virtual hosts need to be connected to with a hostname - hence passing the fqdn.
-        If you're testing a (for example) CMS and keep getting the default page, you probably need to set this.
-        Note that you will need to locally set that fqdn to resolve to 127.0.0.1. See tf for an example.
-
-        Connection attempts are 2/sec for 30 seconds"""
-
+    def browser_onto(self, container, dest_port, fqdn, path, actual_browser) -> Tunnel:
         # some checks
         addr = socket.gethostbyname(fqdn)
         if addr != '127.0.0.1':
             raise ValueError("FQDN '%s' does not resolve to localhost" % fqdn)
 
         # OK
-        tnl = self.tunnel_onto(container, dest_port)
+        tnl = self.tunnel_onto(container, dest_port, None, None)
         tnl.wait_until_ready()
         url = 'http://%s:%d/%s' % (fqdn, tnl.localport, path if path is not None else '')
 
@@ -218,9 +190,7 @@ class Location(Waitable):
 
         return tnl
 
-    def wait_http_200(self, container, dest_port: int=80,
-                      fqdn: str='127.0.0.1', path: str='') -> Tunnel:
-        """Exactly the same as browser_onto except does not spawn the browser."""
+    def wait_http_200(self, container, dest_port, fqdn, path) -> Tunnel:
         logging.info("Waiting on http 200: " + str(container.uuid, 'ascii'))
         return self.browser_onto(container, dest_port, fqdn, path, actual_browser=False)
 
@@ -256,13 +226,9 @@ class Location(Waitable):
 
     def _log(self, msg):
         if msg.params['error']:
-            logging.error("---> " + msg.params['log'])
+            logging.error(msg.params['log'])
         else:
-            logging.info("---> " + msg.params['log'])
-
-    def _kicked(self, msg):
-        logging.critical("Another instance of this account has connected.")
-        raise KeyboardInterrupt
+            logging.info(msg.params['log'])
 
     @staticmethod
     def find_unused_local_port() -> int:
@@ -289,8 +255,7 @@ class Location(Waitable):
                  b'tunnel_up': (_tunnel_up, [], False),
                  b'from_proxy': (_from_proxy, ['proxy'], False),
                  b'close_proxy': (_close_proxy, ['proxy'], False),
-                 b'log': (_log, ['error', 'log'], False),
-                 b'kicked': (_kicked, [], False)}
+                 b'log': (_log, ['error', 'log'], False)}
 
     def __repr__(self):
         return "<tfnz.Location object at %x (nodes=%d)>" % (id(self), len(self.nodes))

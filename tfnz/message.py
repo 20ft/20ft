@@ -40,6 +40,8 @@ class Message:
             rtn.params['process'] = rtn.params['process'].encode('ascii')
         if 'uuid' in rtn.params:
             rtn.params['uuid'] = rtn.params['uuid'].encode('ascii')
+        if 'session' in rtn.params:
+            rtn.params['session'] = rtn.params['session'].encode('ascii')
 
         return rtn
 

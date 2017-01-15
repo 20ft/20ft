@@ -30,8 +30,7 @@ class Sender:
         self.docker_image_id = docker_image_id
 
         # get unique sha256's that need uploading (layer_stack throws for an invalid id)
-        self.layer_stack = Sender.layer_stack(docker_image_id)
-        offers = set(self.layer_stack)
+        offers = set(Sender.layer_stack(docker_image_id))
 
         # set the list of required uploads
         self.requirements = conn.send_blocking_cmd(b'upload_requirements', list(offers)).params
@@ -40,7 +39,7 @@ class Sender:
     def layer_stack(docker_image_id):
         """Returns a list of the layers necessary to create the passed docker image id."""
         # find layers
-        desc = description(docker_image_id)[0]  # get dictionary (throws for invalid id)
+        desc = description(docker_image_id)  # get dictionary (throws for invalid id)
         layers = desc['RootFS']['Layers']
 
         # take the layers and prevent the same layer being applied twice in a row

@@ -4,7 +4,7 @@ The 20ft.nz SDK
 
 .. topic:: Overview
 
-   20ft.nz is a (currently) invite only container hosting service. It is unique in that it does not require an orchestrator and instead provides a CLI and Python SDK to be able to interact with the service directly. It has a focus on security, is explicit about where code runs, and uses Docker's images and development tools.
+   20ft.nz is a (currently) invite only container hosting service. It is unique in that it does not require an orchestrator and instead provides a CLI and Python SDK to be able to interact with the service directly. It has a strong focus on security, is explicit about where code runs, and uses Docker's images and development tools.
 
    For more information email davep@polymath.tech.
 
@@ -108,26 +108,21 @@ Now we can instruct 20ft to use this image with ``tf -v --browser .`` - note the
     0109174501.692 INFO     Getting docker to export layers (this can take a while)...
     0109174510.963 INFO     Background uploading: 145ef...fc6d6/layer.tar
     0109174512.292 INFO     Spawning container: x2LuQnkN4t8vLY5iWTvP6G
-    0109174512.313 INFO     ---> The node is downloading a layer
+    0109174512.313 INFO     The node is downloading layers
     0109174513.867 INFO     Container is running: x2LuQnkN4t8vLY5iWTvP6G
     0109174513.896 INFO     Created tunnel object onto: u3H8iBpKen3w8kuCzEuTDL (6624 -> 80)
     0109174515.906 INFO     Connected onto: http://127.0.0.1:6624/
 
-...and a browser opens with "Hello World!". Easy :) Log lines starting with "--->" are messages from the server.
+...and a browser opens with "Hello World!". Easy :)
 
 Note that both ``tf --help`` and ``man tf`` do what you would hope.
-
-About User Accounts
-===================
-
-A single user account in 20ft is regarded as a single namespace but, more importantly, a single connection to the location. As a result you may have only one instance of ``tf`` running at once. For more complex arrangements, the Python SDK is required.
 
 Production
 ==========
 
 Currently 20ft is designed as a compute resource and hence has no explicit support for public Internet connectivity. The best way to create a server for 20ft is to:
 
-* Create a VM on a public Internet provider. The VM will require almost zero compute power so the smallest available instance will do perfectly well.
+* Create a VM on a public Internet provider (or an intranet). The VM will require little compute power so a small instance will work well.
 * Use monit or similar process manager to...
 * Run ``tf -v --bind aa.bb.cc.dd --offset n image`` to run the container and create tunnels onto its exposed ports.
 
@@ -144,7 +139,7 @@ The vast majority of power in 20ft is contained in the Python SDK. The SDK is BS
 
 It is designed to enable the simple construction of orchestration applications including (but not limited to): unit testing; deployment and scaling; and unique container native architectures.
 
-All the examples below are complete programs. They can be run by pasting the example into a text file (called, say, 'scratch.py') then running with ``python3 scratch.py``. You'll see that the examples are all started with ``debug_log=False``. If started with ``debug_log=True`` you will get, essentially, verbose logging. The default doesn't log at all.
+All the examples below are complete programs. They can be run by pasting the example into a text file (called, say, 'scratch.py') then running with ``python3 scratch.py``.
 
 Quickstart examples in Python
 =============================
@@ -157,22 +152,33 @@ Let's start by implementing the "first container" and "Docker workflow" examples
    location = Location(debug_log=False)
    node = location.best_node()
    container = node.spawn('nginx')
-   location.browser_onto(container)
+   container.attach_browser()
    signal.pause()
 
 The Location object by default connects to the location in '~/.20ft/default_location', and this behaviour can be changed by merely passing the fqdn of an alternative on which you have an account - for instance Location('chch.20ft.nz'). You may create multiple Location objects but only one per location. debug_log is one of three values: None (the default) does nothing to the `user configured <https://docs.python.org/3/howto/logging.html#logging-basic-tutorial>`_  logging; False sets up Python debugging to the 'info' level (-v on tf); and True sets Python debugging to the 'debug' level (-vv on tf).
 
-Note that storing the node object is optional, and we have a 'last_image' function as part of the tfnz.location module. So the Docker workflow example is::
+We have a 'last_image' function as part of the tfnz.location module. So the Docker workflow example is::
 
    import signal
    from tfnz.location import Location, last_image
 
    location = Location(debug_log=False)
-   container = location.best_node().spawn(last_image())
-   location.browser_onto(container)
+   node = location.best_node()
+   container = node.spawn(last_image())
+   container.attach_browser()
    signal.pause()
 
 Controlling the end of execution (here using signal.pause) is important. Without it the script will exit and 20ft will remove all the created resources before you've had a chance to use them for anything. You probably don't want this.
+
+Finally you can chain the return values together so you *could* write: ::
+
+   import signal
+   from tfnz.location import Location, last_image
+
+   Location(debug_log=False).best_node().spawn(last_image()).attach_browser()
+   signal.pause()
+
+This has been avoided in this documentation for the sake of clarity.
 
 Some Logs
 =========
@@ -187,7 +193,7 @@ Modify our script again::
 
     location = Location(debug_log=False)
     container = location.best_node().spawn(last_image())
-    location.browser_onto(container)
+    container.attach_browser()
     for log in container.logs():
         print(json.dumps(log, indent=4))
     signal.pause()
@@ -218,15 +224,13 @@ TCP (only) tunnels can be created from localhost onto a container. The local por
 
     location = Location(debug_log=False)
     container = location.best_node().spawn('nginx')
-    tnl = location.tunnel_onto(container, 80, localport=1234)
+    tnl = container.attach_tunnel(80, localport=1234)
     signal.pause()
-
-Note the sample code ends with signal.pause. If this is missing the the script finishes and the resources garbage collected - including the container itself. If you the connect a browser onto the desired port it will *not* have the webserver running. This is an easy mistake to make. Note as well it is the *location* that creates the tunnel and not the container.
 
 A Special Case for Webservers
 =============================
 
-The above example is a generalised case TCP tunnel and can be used for web, ssh, smtp, whatever. There are also two specialised tunnel factories specifically for webservers: Location.wait_http_200() and Location.browser_onto(). The first case creates a tunnel as normal then blocks execution and polls the other end until it receives a reply with HTTP code 200. You can set a domain name for webapps that need a "Host:" header to be send, and a path to the resource to fetch can also be passed.
+The above example is a generalised case TCP tunnel and can be used for web, ssh, smtp, whatever. There are also two specialised tunnel factories specifically for webservers: container.wait_http_200() and container.attach_browser(). The first case creates a tunnel as normal then blocks execution and polls the other end until it receives a reply with HTTP code 200. You can set a domain name for webapps that need a "Host:" header to be send, and a path to the resource to fetch can also be passed.
 
 The second option does exactly the same thing except it also launches a web browser onto the newly created tunnel. ::
 
@@ -235,7 +239,7 @@ The second option does exactly the same thing except it also launches a web brow
 
     location = Location(debug_log=False)
     container = location.best_node().spawn('nginx')
-    tnl = location.browser_onto(container)
+    tnl = container.attach_browser()
     signal.pause()
 
 
@@ -256,7 +260,7 @@ Thankfully there's a better way to effect a dynamic configuration and that's by 
     location = Location(debug_log=True)
     preboot = {'/usr/share/nginx/html/index.html': 'Hello World!'}
     container = location.best_node().spawn('nginx', pre_boot_files=preboot)
-    location.browser_onto(container)
+    container.attach_browser()
     signal.pause()
 
 Obviously you are free to debug these renders client side, and in Python (instead of bash). Preboot files also make an excellent basis for higher level components i.e. a single 'LoadBalancer' class that uses pre-boot files as it's implementation.
@@ -264,13 +268,13 @@ Obviously you are free to debug these renders client side, and in Python (instea
 Launching Processes in Containers (aka Pods)
 ============================================
 
-"Container style" launching of a single server process obviously doesn't cover all use-cases so it's possible to launch a process within a pre-booted container. There can be multiple processes running concurrently and they can be run either synchronously to completion, or asynchronously with callbacks for the stdout stream and process termination. Some examples: Synchronously... ::
+"Container style" launch-at-boot of a single server process obviously doesn't cover all use cases so in 20ft it's possible to launch a process inside a pre-booted container. There can be multiple processes running concurrently and they can be run either synchronously to completion, or asynchronously with callbacks for the stdout stream and process termination. Some examples: Synchronously... ::
 
     from tfnz.location import Location
 
     location = Location(debug_log=False)
     container = location.best_node().spawn('nginx')
-    location.wait_http_200(container)
+    container.wait_http_200()
     data = container.spawn_process('ps faxu').wait_until_complete()
     print(str(data, 'ascii'))
 
@@ -293,7 +297,7 @@ Asynchronously... ::
     vmstat = container.spawn_process('vmstat 1', data_callback=dc, termination_callback=tc)
     sleep = container.spawn_process('sleep 3', termination_callback=sleep_tc)
     time.sleep(10)
-    vmstat.destroy()
+    vmstat.destroy()  # just so we get the termination callback - would still garbage collect without it
 
 The concept of multiple processes in a single container can be implemented by starting the container 'asleep' then launching processes as and when you see fit. This is illustrated below... ::
 
@@ -304,7 +308,7 @@ The concept of multiple processes in a single container can be implemented by st
     container = location.best_node().spawn('nginx', sleep=True)
     print(str(container.spawn_process('ps').wait_until_complete(), 'ascii'))
     process = container.spawn_process('nginx')
-    location.wait_http_200(container)
+    container.wait_http_200()
     print(str(container.spawn_process('ps').wait_until_complete(), 'ascii'))
     signal.pause()
 
@@ -315,14 +319,16 @@ Concurrent Booting
 
 The image used in these examples is a fairly heavy Apache/Mezzanine/Django/Postgres stack with non-trivial startup costs. Consider the synchronous case::
 
+    import logging
+    from tfnz.location import Location
+
     location = Location('tiny.20ft.nz', debug_log=False)
     location.ensure_image_uploaded('337c501c333c')
     logging.info("-----Starting")
     for n in range(0, 10):
-        container = location.best_node().spawn('337c501c333c')
-        location.wait_http_200(container, fqdn="www.atomicdroplet.com")
+        container = location.best_node().spawn('337c501c333c', no_image_check=True)
+        container.wait_http_200(fqdn="www.atomicdroplet.com")
     logging.info("-----Finished")
-    signal.pause()
 
 Results in::
 
@@ -341,17 +347,19 @@ Results in::
 
 76.9 seconds. In parallel::
 
+    import logging
+    from tfnz.location import Location
+
     location = Location('tiny.20ft.nz', debug_log=False)
     location.ensure_image_uploaded('337c501c333c')
     containers = []
     logging.info("-----Starting")
     for n in range(0, 10):
-        container = location.best_node().spawn('337c501c333c')
+        container = location.best_node().spawn('337c501c333c', no_image_check=True)
         containers.append(container)
     for container in containers:
-        location.wait_http_200(container, fqdn="www.atomicdroplet.com")
+        container.wait_http_200(fqdn="www.atomicdroplet.com")
     logging.info("-----Finished")
-    signal.pause()
 
 Gives::
 
@@ -378,7 +386,7 @@ Gives::
     1207165557.990 INFO     Connected onto: http://www.atomicdroplet.com:1452/
     1207165557.990 INFO     -----Finished
 
-19.25 seconds - one quarter the time.
+19.25 seconds - one quarter the time. This is also the first time we split spawn into separate ``ensure_image_uploaded`` and ``spawn`` calls since ensuring the upload only needs to happen once.
 
 Obviously this is a somewhat contrived example but the lesson is simple: If you can start containers ahead of when you need them, you will enjoy a (very) significant performance boost.
 
@@ -411,14 +419,14 @@ PyCharm offers built in support for unit testing. Writing unit tests for contain
            container = TfTest.location.best_node().spawn('nginx', no_image_check=True)
 
            # creating a tunnel after http 200
-           tnl = self.location.wait_http_200(container)
+           tnl = container.wait_http_200()
            r = requests.get('http://127.0.0.1:' + str(tnl.localport))
-           self.assertTrue('<title>Welcome to nginx!</title>' in r.text, 'Did not get the expected reply from container')
+           self.assertTrue('<title>Welcome to nginx!</title>' in r.text, 'Did not get the expected reply')
 
    if __name__ == '__main__':
        main()
 
-So the Location object is created only once, and we ensure the image under test is uploaded just once instead of being on every spawn.
+So the Location object is created only once, and we the image is 'ensured' instead of being tested on every spawn.
 
 To run this:
 
