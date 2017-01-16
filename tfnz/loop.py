@@ -16,6 +16,7 @@ import logging
 import zmq
 import time
 import threading
+import os
 from .message import Message
 
 
@@ -189,11 +190,14 @@ class Loop:
                     else:
                         logging.warning("Unable to return ValueError to client: " + str(e))
                 except BaseException as e:
+                    # these need fixing pronto since os._exit doesn't call 'finally' clauses or anything else.
                     logging.critical("Critical failure in background loop: " + str(e))
-                    self.stop(wait=False)
+                    os._exit(1)
+
 
             # any retries?
             for rt in set(self.retry):
+                logging.debug("Retry: " + str(rt))
                 rt()
 
         logging.debug("Message loop has finished")

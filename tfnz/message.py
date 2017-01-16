@@ -51,8 +51,6 @@ class Message:
 
     def reply(self, socket, params=None, bulk=b''):
         """Reply to a previously received message."""
-        if not self.replyable():
-            logging.error("Reply called on a non-replyable message: " + str(self))
         parts = [self.command,
                  self.uuid,
                  json.dumps(params).encode('utf-8') if params is not None else b'{}',
