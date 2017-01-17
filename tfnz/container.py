@@ -17,7 +17,6 @@ import json
 import weakref
 import requests
 import requests_unixsocket
-from subprocess import PIPE, Popen, TimeoutExpired
 from .waitable import Waitable
 from .tunnel import Tunnel
 from .process import Process

@@ -12,3 +12,5 @@ tfnz.egg-info/SOURCES.txt
 tfnz.egg-info/top_level.txt
 
 pain_loop
+
+*.egg

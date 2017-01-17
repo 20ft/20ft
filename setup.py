@@ -14,7 +14,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 from setuptools import setup
 setup(name='tfnz',
-      version='0.9.2',
+      version='0.9.4',
       author='David Preece',
       author_email='davep@polymath.tech',
       url='https://20ft.nz',
@@ -41,10 +41,9 @@ setup(name='tfnz',
             'Programming Language :: Python :: 3.6'
       ],
       entry_points={
-            'console_scripts': ['tf = tfnz.tf:main']
+            'console_scripts': ['tf=tfnz.tf:main']
       },
       data_files=[
             ('/usr/local/share/man/man1', ['tf.1'])
       ]
-      )
-
+)
