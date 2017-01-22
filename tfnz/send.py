@@ -14,11 +14,13 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 # You might also want to 'brew install pigz' for a parallel zipper
 
-from subprocess import check_output, call
+from subprocess import check_output, Popen, PIPE
 import os.path
 import hashlib
 import logging
-import tempfile
+import io
+import json
+from tarfile import TarFile
 from .container import description
 
 
@@ -34,6 +36,7 @@ class Sender:
 
         # set the list of required uploads
         self.requirements = conn.send_blocking_cmd(b'upload_requirements', list(offers)).params
+        self.req_to_go = len(self.requirements)
 
     @staticmethod
     def layer_stack(docker_image_id):
@@ -60,25 +63,26 @@ class Sender:
             return
 
         # get docker to export *all* the layers (not like we have a choice, would be happy to be informed otherwise)
-        logging.info("Getting docker to export layers (this can take a while)...")
-        td = tempfile.TemporaryDirectory()
-        fname = td.name + '/' + self.docker_image_id + '.tar'
-        call(['/usr/local/bin/docker', 'save', '-o', fname, self.docker_image_id])
-        os.chdir(td.name)
-        call(['/usr/bin/tar', 'xf', fname])
+        logging.info("Getting docker to export layers...")
+        process = Popen(['/usr/local/bin/docker', 'save', self.docker_image_id], stdout=PIPE)
+        (docker_stdout, docker_stderr) = process.communicate()
+        raw_top_tar = io.BytesIO(docker_stdout)
+        top_tar = TarFile(fileobj=raw_top_tar)
 
         # sha256 and send until all our requirements are met
-        dir_entries = str(check_output(['ls']), 'ascii').split('\n')
-        for layer in dir_entries:
-            if layer is None or layer == '' or not os.path.isdir(layer):
+        for member in top_tar.getmembers():
+            # only even remotely interested in the layers
+            if '/layer.tar' not in str(member):
                 continue
-            layer += '/layer.tar'
-            if os.path.islink(layer):  # not unique then, is it?
-                continue
-            with open(layer, 'rb') as file:
-                logging.debug("Finding sha256: " + layer)
-                data = file.read()
-                sha256 = hashlib.sha256(data).hexdigest()
-                if sha256 in self.requirements:
-                    logging.info("Background uploading: " + layer)
-                    self.conn.send_cmd(b'upload', {'sha256': sha256}, bulk=data)
+
+            # extract and hash the data
+            layer_data = top_tar.extractfile(member).read()
+            sha256 = hashlib.sha256(layer_data).hexdigest()
+
+            # is this one we care about?
+            if sha256 in self.requirements:
+                logging.info("Background uploading: " + sha256)
+                self.conn.send_cmd(b'upload', {'sha256': sha256}, bulk=layer_data)
+                self.req_to_go -= 1
+                if self.req_to_go == 0:  # done
+                    break
