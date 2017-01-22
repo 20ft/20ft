@@ -15,7 +15,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import logging
 import weakref
-from .container import Container, description
+from . import description
+from .container import Container
 from .send import Sender
 
 

@@ -10,7 +10,8 @@ import subprocess
 import json
 import time
 from tfnz.location import Location
-from tfnz.container import Container, description
+from tfnz.container import Container
+from tfnz import description
 
 
 class TfTest(TestCase):

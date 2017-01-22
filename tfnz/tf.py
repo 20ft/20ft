@@ -19,7 +19,9 @@ import sys
 import os
 import json
 import signal
-from tfnz.location import Location, last_image
+from tfnz.location import Location
+from . import last_image
+
 
 def main():
     parser = argparse.ArgumentParser(prog='tf')

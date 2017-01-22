@@ -12,16 +12,12 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 """
 
-# You might also want to 'brew install pigz' for a parallel zipper
-
-from subprocess import check_output, Popen, PIPE
-import os.path
+from subprocess import Popen, PIPE
 import hashlib
 import logging
 import io
-import json
 from tarfile import TarFile
-from .container import description
+from . import description
 
 
 class Sender:
@@ -63,6 +59,7 @@ class Sender:
             return
 
         # get docker to export *all* the layers (not like we have a choice, would be happy to be informed otherwise)
+        # note that making a fake registry was tried and found to be horrible
         logging.info("Getting docker to export layers...")
         process = Popen(['/usr/local/bin/docker', 'save', self.docker_image_id], stdout=PIPE)
         (docker_stdout, docker_stderr) = process.communicate()

@@ -13,23 +13,19 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 """
 
 import logging
-import io
-import random
-import sys
-import traceback
 import webbrowser
 import socket
 import requests
 import time
 import os
 from requests.exceptions import ConnectionError
-from subprocess import check_output, call, DEVNULL
+from subprocess import call, DEVNULL
 from .waitable import Waitable
 from .node import Node
 from .connection import Connection
 from .send import Sender
 from .tunnel import Tunnel
-from .container import Container
+from . import find_unused_local_port
 
 
 # A NOTE ON STR VS BYTES
@@ -149,7 +145,7 @@ class Location(Waitable):
         self.wait_until_ready()
         container.wait_until_ready()
         if localport is None:
-            localport = Location.find_unused_local_port()
+            localport = find_unused_local_port()
 
         # create the tunnel
         container.wait_until_ready()  # otherwise the IP address may not exist on the node and creation will fail
@@ -230,27 +226,6 @@ class Location(Waitable):
         else:
             logging.info(msg.params['log'])
 
-    @staticmethod
-    def find_unused_local_port() -> int:
-        # find the used ports
-        out = io.BytesIO(check_output(['/usr/sbin/netstat', '-n', '-f', 'inet', '-p', 'tcp']))
-        out.readline()
-        out.readline()
-        ports = set()
-        for line in out:
-            try:
-                props = line.split()
-                ip_bits = str(props[3], 'ascii').split('.')
-                ports.add(ip_bits[4])
-            except:
-                raise RuntimeError("Failed trying to find an open local port")
-
-        # keep guessing until we get an empty one
-        while True:
-            candidate = random.randrange(1025, 8192)
-            if candidate not in ports:
-                return candidate
-
     _commands = {b'resource_offer': (_resource_offer, [], False),
                  b'tunnel_up': (_tunnel_up, [], False),
                  b'from_proxy': (_from_proxy, ['proxy'], False),
@@ -259,25 +234,3 @@ class Location(Waitable):
 
     def __repr__(self):
         return "<tfnz.Location object at %x (nodes=%d)>" % (id(self), len(self.nodes))
-
-
-# misc
-
-def last_image() -> str:
-    """Finding the most recent docker image on this machine.
-
-       The intent is that last_image can be used as part of a development cycle (pass as image to spawn)."""
-    dkr_result = check_output(['docker', 'images', '-q'])
-    if dkr_result == b'':
-        raise ValueError("Docker has no local images.")
-    return str(dkr_result[:12], 'ascii')
-
-
-def uncaught_exception(exctype, value, tb):
-    if exctype is KeyboardInterrupt:
-        logging.info("Caught Ctrl-C, closing")  # clearing server side objects done by server
-        exit(0)
-    traceback.print_exception(exctype, value, tb)
-    exit(1)
-
-sys.excepthook = uncaught_exception

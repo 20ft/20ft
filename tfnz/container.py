@@ -186,10 +186,3 @@ class Container(Waitable):
     def __repr__(self):
         return "<tfnz.Container object at %x (image=%s uuid=%s)>" % (id(self), self.image, str(self.uuid, 'ascii'))
 
-
-def description(docker_image_id) -> dict:
-    # Get metadata from local Docker.
-    url_base = 'http+unix://%2Fvar%2Frun%2Fdocker.sock'
-    r = requests.get('%s/images/%s/json' % (url_base, docker_image_id))
-    obj = json.loads(r.text)
-    return obj
