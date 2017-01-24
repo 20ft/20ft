@@ -28,6 +28,9 @@ def description(docker_image_id) -> dict:
     # Get metadata from local Docker.
     r = requests.get('%s/images/%s/json' % (docker_url_base, docker_image_id))
     obj = json.loads(r.text)
+    if 'message' in obj:
+        if obj['message'][0:14] == "No such image:":
+            raise ValueError("Image not in local docker: " + docker_image_id)
     return obj
 
 

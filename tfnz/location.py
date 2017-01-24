@@ -25,7 +25,7 @@ from .node import Node
 from .connection import Connection
 from .send import Sender
 from .tunnel import Tunnel
-from . import find_unused_local_port
+from . import find_unused_local_port, description
 
 
 # A NOTE ON STR VS BYTES
@@ -87,8 +87,8 @@ class Location(Waitable):
 
         # See if we have it locally
         try:
-            Sender.layer_stack(docker_image_id)
-        except RuntimeError:
+            description(docker_image_id)
+        except ValueError:
             logging.info("Fetching with 'docker pull' (may take some time): " + docker_image_id)
             if call(['/usr/local/bin/docker', 'pull', docker_image_id], stdout=DEVNULL, stderr=DEVNULL) != 0:
                 raise ValueError("Could not docker pull image: " + docker_image_id)
