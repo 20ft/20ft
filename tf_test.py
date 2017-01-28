@@ -19,8 +19,8 @@ class TfTest(TestCase):
     @classmethod
     def setUpClass(cls):
         cls.image = 'nginx'
-        cls.launched_process = b'nginx: worker process'
-        cls.root_reply_contains = b'<title>Welcome to nginx!</title>'
+        cls.launched_process = 'nginx: worker process'
+        cls.root_reply_contains = '<title>Welcome to nginx!</title>'
         cls.acceptable_boot_time = 10
         cls.location = Location(debug_log=False)
         cls.location.ensure_image_uploaded(cls.image)
@@ -46,7 +46,7 @@ class TfTest(TestCase):
         attempts = 0
         while True:
             ps_result = container.spawn_process('ps ax').wait_until_complete()
-            running = TfTest.launched_process in ps_result
+            running = TfTest.launched_process.encode() in ps_result
             if running:
                 self.assertTrue(True, 'Container spawned process')
                 break
@@ -67,8 +67,9 @@ class TfTest(TestCase):
         container = TfTest.location.best_node().spawn(TfTest.image, sleep=True, no_image_check=True)
         time.sleep(TfTest.acceptable_boot_time)  # give it a while to boot or whatever
         ps_result = container.spawn_process('ps ax').wait_until_complete()  # tests that we can still run processes
-        self.assertTrue(TfTest.launched_process not in ps_result, 'Asked for an asleep container but it started anyway')
-        self.assertTrue(b'sleep' in ps_result, 'The sleep command does not appear to be running')
+        self.assertTrue(TfTest.launched_process.encode('ascii') not in ps_result,
+                        'Asked for an asleep container but it started anyway')
+        self.assertTrue('sleep' in ps_result.decode(), 'The sleep command does not appear to be running')
 
     def test_spawn_preboot(self):
         # write configuration files before we boot
@@ -109,6 +110,15 @@ class TfTest(TestCase):
             self.assertTrue(False, 'Trying to fetch a directory did not throw an excepton')
         except ValueError as e:
             self.assertTrue(True)
+
+    def test_spawn_process(self):
+        container = TfTest.location.best_node().spawn(TfTest.image, no_image_check=True)
+
+        # test command styles
+        r1 = container.spawn_process('echo "Hello World"').wait_until_complete()
+        self.assertTrue(r1 == b'Hello World\r\n')
+        r2 = container.spawn_process(['echo', 'Hello World']).wait_until_complete()
+        self.assertTrue(r2 == b'Hello World\r\n')
 
     def test_callbacks(self):
         self.vmstat_data = b''
@@ -160,18 +170,15 @@ class TfTest(TestCase):
                                             stderr=subprocess.DEVNULL)
         except BaseException as e:
             self.assertTrue(False, 'Running curl against the tunnel threw an exception: ' + str(e))
-        self.assertTrue(TfTest.root_reply_contains in reply, 'Did not get the expected reply from container')
+        self.assertTrue(TfTest.root_reply_contains.encode() in reply, 'Did not get the expected reply from container')
 
         # seeing if it was logged
         logs = container.logs()
         self.assertTrue(len(logs) != 0, 'Container logs were blank')
         self.assertTrue('curl/' in logs[len(logs)-1]['log'], 'The request from curl didn\'t show up in server logs')
 
-    def test_resource_management(self):
-        # can the "good" container get work done while the "bad" container is being bad?
-        node = TfTest.location.best_node()  # won't interfere at all if they're not on the same node
-        bad_container = node.spawn(TfTest.image, no_image_check=True)
-        good_container = node.spawn(TfTest.image, no_image_check=True)
+    def test_contain_loop(self):
+        bad_container, good_container = self._two_containers()
 
         # eat cpu
         processes = []
@@ -179,26 +186,38 @@ class TfTest(TestCase):
             processes.append(bad_container.spawn_process('dd if=/dev/zero of=/dev/null'))
         time.sleep(10)
         ps_result = good_container.spawn_process('ps ax').wait_until_complete()
-        self.assertTrue(TfTest.launched_process in ps_result)
+        self.assertTrue(TfTest.launched_process in ps_result.decode('ascii'))
         for process in processes:
             process.destroy()
 
-        # death cat
+    def test_contain_cat(self):
+        bad_container, good_container = self._two_containers()
+
+        # bad container attacks the file system
         processes = []
         for n in range(0,10):
             processes.append(bad_container.spawn_process('cat /dev/zero > zeroes' + str(n)))
         time.sleep(10)
         ps_result = good_container.spawn_process('ps ax').wait_until_complete()
-        self.assertTrue(TfTest.launched_process in ps_result)
+        self.assertTrue(TfTest.launched_process in ps_result.decode('ascii'))
         for process in processes:
             process.destroy()
         bad_container.spawn_process('rm zeroes*')
 
-        # fork bomb
+    def test_contain_fork_bomb(self):
+        bad_container, good_container = self._two_containers()
+
+        # bad container runs a fork bomb
         bad_container.spawn_process(':(){ :|: & };:')
         time.sleep(10)
         ps_result = good_container.spawn_process('ps ax').wait_until_complete()
-        self.assertTrue(TfTest.launched_process in ps_result)
+        self.assertTrue(TfTest.launched_process in ps_result.decode('ascii'))
+
+    def _two_containers(self):
+        node = TfTest.location.best_node()
+        bad_container = node.spawn(TfTest.image, no_image_check=True)
+        good_container = node.spawn(TfTest.image, no_image_check=True)
+        return bad_container, good_container
 
 
 if __name__ == '__main__':

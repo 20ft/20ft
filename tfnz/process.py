@@ -30,7 +30,7 @@ class Process(Waitable):
         self.dead = False
         self.data_callback = data_callback
         self.terminated_callback = terminated_callback
-        logging.info("Created process: " + str(self.uuid, 'ascii'))
+        logging.info("Created process: " + self.uuid)
 
     def destroy(self):
         """Destroy this process."""
@@ -38,10 +38,10 @@ class Process(Waitable):
         if self.dead:
             return
         self.dead = True
-        self.conn().send_cmd(b'destroy_process',
-                             params={'node': str(self.node().pk, 'ascii'),
-                                     'container': str(self.parent().uuid, 'ascii'),
-                                     'process': str(self.uuid, 'ascii')})
+        self.conn().send_cmd('destroy_process',
+                             params={'node': self.node().pk,
+                                     'container': self.parent().uuid,
+                                     'process': self.uuid})
         self.is_ready()  # release the blocker
         if self.terminated_callback is not None:
             self.terminated_callback(self)
@@ -49,7 +49,7 @@ class Process(Waitable):
     def wait_until_complete(self):
         """Wait until the process is complete. If using default callback, returns all data collected."""
         if not self.wait_until_ready():
-            raise ValueError("Process didn\'t complete: " + str(self.uuid, 'ascii'))
+            raise ValueError("Process didn\'t complete: " + self.uuid)
         return self.data
 
     def give_me_messages(self, msg):
@@ -59,7 +59,7 @@ class Process(Waitable):
         # Has the process died?
         length = len(msg.bulk)
         if len(msg.bulk) == 0:
-            logging.info("Process terminated server side: " + str(self.uuid, 'ascii'))
+            logging.info("Process terminated server side: " + self.uuid)
             self.dead = True
             self.is_ready()  # release the blocker
             if self.terminated_callback is not None:

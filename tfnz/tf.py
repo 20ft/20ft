@@ -20,16 +20,15 @@ import os
 import json
 import signal
 from tfnz.location import Location
-from . import last_image
+from tfnz import last_image
 
 
 def main():
     parser = argparse.ArgumentParser(prog='tf')
     parser.add_argument('-v', action='count', help='Increase verbosity (up to 2)')
     parser.add_argument('--loc', help='Use a non-default location (fqdn)', metavar='xxx.20ft.nz')
-    parser.add_argument('--local_ip', help='A non-dns ip for the broker', metavar='yyy.local')
+    parser.add_argument('--local_broker', help='A non-dns ip for the broker', metavar='yyy.local')
     parser.add_argument('--bind', help='Bind to an address other than localhost', metavar='aa.bb.cc.dd')
-    parser.add_argument('--offset', help='Offset to apply from the container exposed port', default=None)
     parser.add_argument('--json', help='Writes a file describing state (deleted on exit)', metavar="filename")
     parser.add_argument('--browser', action="store_true", help='Create web browser onto container port 80')
     parser.add_argument('--domain', help='Use a domain name other than \'localhost\' in HTTP', metavar="fake.domain")
@@ -62,9 +61,9 @@ def main():
     container = None
     try:
         if args.v is not None:
-            location = Location(args.loc, args.local_ip, debug_log=(args.v == 2))
+            location = Location(args.loc, args.local_broker, debug_log=(args.v == 2))
         else:
-            location = Location(args.loc, args.local_ip)
+            location = Location(args.loc, args.local_broker)
     except BaseException as e:
         print("Failed while connecting to location: " + str(e), file=sys.stderr)
         exit(5)
@@ -95,14 +94,11 @@ def main():
         for exposed in ports.keys():
             if len(exposed) < 4 or exposed[-4:] != '/tcp':
                 continue
-            try:
-                lp = (int(exposed[:-4]) + int(args.offset)) if args.offset is not None else None
-                tnl = container.attach_tunnel(int(exposed[:-4]),
-                                              localport=lp,
-                                              bind=args.bind)
-            except ValueError:
-                print("Offset needs to be an integer", file=sys.stderr)
-                exit(10)
+            port = int(exposed[:-4])
+            tnl = container.attach_tunnel(port,
+                                          localport=port if port > 1024 else None,
+                                          bind=args.bind)
+            tunnels.append(tnl)
 
     # finally
     etc_hosts = None
@@ -128,7 +124,7 @@ def main():
     # write some json?
     if json_file is not None:
         root = dict()
-        root['Container'] = {"uuid": str(container.uuid, 'ascii'), "image": container.image, "env": container.env}
+        root['Container'] = {"uuid": container.uuid, "image": container.image, "env": container.env}
         root['Tunnels'] = {tnl.port: tnl.localport for tnl in tunnels}
         root['pid'] = os.getpid()
         try:

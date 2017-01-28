@@ -6,9 +6,8 @@ tf - launch a container on 20ft.nz
 [\fB\-h\fR]
 [\fB\-v\fR]
 [\fB\-\-loc \fIxxx.20ft.nz\fR]
-[\fB\-\-local_ip \fIyyy.local\fR]
-[\fB\-\-bind \fIn\fR]
-[\fB\-\-offset \fIn\fR]
+[\fB\-\-local_broker \fIyyy.local\fR]
+[\fB\-\-bind \fIaa.bb.cc.dd\fIn\fR]
 [\fB\-\-latest\fR]
 [\fB\-\-json \fIfilename\fR]
 [\fB\-\-browser\fR
@@ -18,9 +17,9 @@ tf - launch a container on 20ft.nz
 [\fB\fIENVIRONMENT=\fIvalue \fR[\fB\fIENVIRONMENT=VALUE \fR...]]
 .SH DESCRIPTION
 .B tf
-Launches containers on 20ft.nz, passes the environment variables and creates localhost tunnels to ports 'exposed' within the Docker config. Use \fB\-\-loc\fR to specify a non-default location and \fB\-\-local_ip\fR to specify a connection ip other than that obtained by a dns lookup.
+Launches containers on 20ft.nz, passes the environment variables and creates localhost tunnels to ports 'exposed' within the Docker config. Use \fB\-\-loc\fR to specify a non-default location and \fB\-\-local_broker\fR to specify a connection ip other than that obtained by a dns lookup.
 
-Find localhost addresses using the \fB\-\-json\fR file or directly attach a browser with \fB\-\-browser\fR with an optional hostname sent as the HTTP Host header. Note that for the browser to attach the hostname needs to resolve to 127.0.0.1 - tf will help you do this if necessary. If you are connecting to a location not over the public Internet, (optionally) provide a local address with \fB\-\-local_ip\fR.
+Find localhost addresses using the \fB\-\-json\fR file or directly attach a browser with \fB\-\-browser\fR with an optional hostname sent as the HTTP Host header. Note that for the browser to attach the hostname needs to resolve to 127.0.0.1 - tf will help you do this if necessary..
 
 Using . as the image name launches this machine's most recently built docker image.
 .SH OPTIONS
@@ -34,14 +33,11 @@ Increase verbosity (up to 2)
 .BR \-\-loc\ xxx\.20ft\.nz
 Use an (optional) non-default location (fqdn)
 .TP
-.BR \-\-local_ip\ yyy.local
+.BR \-\-local_broker\ yyy.local
 An optional (local) ip for the broker
 .TP
-.BR \-\-bind\ filename
+.BR \-\-bind\ aa.bb.cc.dd
 Binds to an address other than localhost
-.TP
-.BR \-\-offset\ filename
-Applies a local offset to the container exposed port
 .TP
 .BR \-\-json\ filename
 Writes a file describing state (deleted on exit)

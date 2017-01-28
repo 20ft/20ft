@@ -18,7 +18,7 @@ from libnacl.public import SecretKey
 
 
 class KeyPair:
-    """Holds a public/secret key pair as base 64"""
+    """Holds a public/secret key pair as base 64 - bytes not strings"""
 
     def __init__(self, name=None, prefix='~/.20ft'):
         self.public = None
@@ -30,14 +30,14 @@ class KeyPair:
         expand = os.path.expanduser(prefix)
         try:
             with open(expand + '/' + name + ".pub", 'rb') as f:
-                self.public = str(f.read(), 'ascii')[:-1]
+                self.public = f.read()[:-1]
         except FileNotFoundError:
             raise RuntimeError("No public key found, halting")
         try:
             with open(expand + '/' + name, 'rb') as f:
-                self.secret = str(f.read(), 'ascii')[:-1]
+                self.secret = f.read()[:-1]
         except FileNotFoundError:
-            pass
+            raise RuntimeError("No private key found, halting")
 
     def public_binary(self):
         return b64decode(self.public)
@@ -50,8 +50,8 @@ class KeyPair:
         """Create a new random key pair"""
         keys = SecretKey()
         rtn = KeyPair()
-        rtn.public = str(b64encode(keys.pk), 'ascii')
-        rtn.secret = str(b64encode(keys.sk), 'ascii')
+        rtn.public = b64encode(keys.pk)
+        rtn.secret = b64encode(keys.sk)
         return rtn
 
     def __repr__(self):

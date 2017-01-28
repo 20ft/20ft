@@ -31,7 +31,7 @@ class Sender:
         offers = set(Sender.layer_stack(docker_image_id))
 
         # set the list of required uploads
-        self.requirements = conn.send_blocking_cmd(b'upload_requirements', list(offers)).params
+        self.requirements = conn.send_blocking_cmd('upload_requirements', list(offers)).params
         self.req_to_go = len(self.requirements)
 
     @staticmethod
@@ -79,7 +79,7 @@ class Sender:
             # is this one we care about?
             if sha256 in self.requirements:
                 logging.info("Background uploading: " + sha256)
-                self.conn.send_cmd(b'upload', {'sha256': sha256}, bulk=layer_data)
+                self.conn.send_cmd('upload', {'sha256': sha256}, bulk=layer_data)
                 self.req_to_go -= 1
                 if self.req_to_go == 0:  # done
                     break

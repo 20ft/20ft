@@ -20,9 +20,10 @@ import os
 from .message import Message
 
 
-class Loop:
+class Loop():
 
     def __init__(self, skt, pk, message_type=Message):
+        super().__init__()
         """Initialise (but not start) a message loop.
 
         skt is the zeromq socket that connects to the location.
@@ -36,6 +37,8 @@ class Loop:
         self.skt = skt  # the main trunk socket
         self.pk = pk
         self.message_type = message_type
+        self.value_error_handler = None
+        self.other_error_handler = None
         self.running = False
         self.finished = False
         self.main_thread = threading.get_ident()
@@ -58,7 +61,7 @@ class Loop:
 
     def register_commands(self, skt, obj, commands):
         """Register command callbacks directly."""
-        # A single shot per socket. Pass commands as {b'name': _callback, ... }
+        # A single shot per socket. Pass commands as {'name': _callback, ... }
         if self.running:
             # See self.running above
             raise RuntimeError("Tried to add new commands to an already running message loop")
@@ -73,7 +76,7 @@ class Loop:
     def register_reply(self, command_uuid, callback):
         """Hooking the reply to a command. Note that this will not override an exclusive socket."""
         if callback is not None:
-            logging.debug("Registered a reply for uuid: " + str(command_uuid, 'ascii'))
+            logging.debug("Registered a reply for uuid: " + command_uuid)
             self.reply_callbacks[command_uuid] = callback
         else:
             raise RuntimeError("Tried to register a reply for a command but passed None for the callback")
@@ -81,7 +84,7 @@ class Loop:
     def unregister_reply(self, command_uuid):
         """Removing the reply hook"""
         if command_uuid in self.reply_callbacks:
-            logging.debug("Unregistered a reply for uuid: " + str(command_uuid, 'ascii'))
+            logging.debug("Unregistered a reply for uuid: " + command_uuid)
             del self.reply_callbacks[command_uuid]
         else:
             logging.debug("Called unregister_reply for a uuid that isn't hooked")
@@ -111,6 +114,12 @@ class Loop:
     def unregister_retry(self, obj):
         if obj in self.retry:
             self.retry.remove(obj)
+
+    def on_value_error(self, callback):
+        self.value_error_handler = callback
+
+    def on_other_error(self, callback):
+        self.other_error_handler = callback
 
     def stop(self, wait=True):
         """Stops the message loop."""
@@ -185,15 +194,15 @@ class Loop:
                     else:
                         logging.warning("No handler was found for: " + str(msg.command))
                 except ValueError as e:
-                    if msg.replyable():
-                        msg.reply(self.skt, {"exception": str(e)})
+                    if self.value_error_handler:
+                        self.value_error_handler(e, msg, self.skt)
                     else:
-                        logging.warning("Unable to return ValueError to client: " + str(e))
+                        raise e
                 except BaseException as e:
-                    # these need fixing pronto since os._exit doesn't call 'finally' clauses or anything else.
-                    logging.critical("Critical failure in background loop: " + str(e))
-                    os._exit(1)
-
+                    if self.other_error_handler:
+                        self.other_error_handler(e, msg, self.skt)
+                    else:
+                        raise e
 
             # any retries?
             for rt in set(self.retry):

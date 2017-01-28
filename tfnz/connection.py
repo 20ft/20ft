@@ -86,7 +86,7 @@ class Connection(Waitable):
         self.skt = zmq.Context.instance().socket(zmq.DEALER)
         self.skt.reconnect_ivl = 1000  # 1/second (default is 1/10sec)
         self.skt.ipv4only = True
-        self.skt.identity = self.keys.public.encode('ascii')
+        self.skt.identity = self.keys.public
         self.skt.curve_secretkey = self.keys.secret_binary()
         self.skt.curve_publickey = self.keys.public_binary()
         self.skt.curve_serverkey = self.server_public
@@ -104,10 +104,10 @@ class Connection(Waitable):
         self.wait_until_ready()
         self.loop.run()  # blocks until loop.stop is called
 
-    def send_cmd(self, cmd: bytes, params=None, bulk: bytes=b'', reply_callback=None):
+    def send_cmd(self, cmd: str, params=None, bulk: bytes=b'', reply_callback=None):
         """Sends a command to the location, can route replies. Call from either thread, returns uuid.
 
-           cmd is a binary string i.e. b'map'
+           cmd is a binary string i.e. 'map'
            params are usually a dictionary of values but can also be a list (or None)
            bulk is for passing blobs - i.e. an entire layer
            reply_callback gives the object.method to call on the background thread when the command receives a reply
@@ -118,14 +118,12 @@ class Connection(Waitable):
             raise RuntimeError("The connection has no message loop - _start has not been called.")
         if cmd is None:
             raise RuntimeError("Need to pass a command to send_cmd.")
-        if type(cmd) is not bytes:
-            raise ValueError("Commands need to be sent as byte strings not 'string' strings. Put a b in front.")
 
         # send
         socket = self.send_skt if get_ident() == self.main_thread else self.skt
         if reply_callback is not None:
             # important that we register the expectation of a reply before asking the question
-            uuid = shortuuid.uuid().encode('ascii')
+            uuid = shortuuid.uuid()
             self.loop.register_reply(uuid, reply_callback)
             Message.send(socket, cmd, params, uuid=uuid, bulk=bulk)
             return uuid
@@ -134,7 +132,7 @@ class Connection(Waitable):
             Message.send(socket, cmd, params, bulk=bulk)
             return None
 
-    def send_blocking_cmd(self, cmd: bytes, params=None, bulk: bytes=b'') -> Message:
+    def send_blocking_cmd(self, cmd: str, params=None, bulk: bytes=b'') -> Message:
         """Send a command from the main thread, block for the reply."""
         if current_thread() != main_thread():
             raise RuntimeError("You can only send blocking commands on the main thread")
@@ -176,7 +174,7 @@ class Connection(Waitable):
 
     def _unblock(self, msg: Message):
         self.loop.unregister_reply(msg.uuid)
-        logging.debug("Unblocking for uuid: " + str(msg.uuid, 'ascii'))
+        logging.debug("Unblocking for uuid: " + msg.uuid)
         self.block_results = msg  # msg is stored first
         self.block_reply.release()
 

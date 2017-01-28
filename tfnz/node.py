@@ -56,8 +56,8 @@ class Node:
         if sleep:
             descr['Config']['Entrypoint'] = None
             descr['Config']['Cmd'] = ['sleep', 'inf']
-        uuid = self.conn().send_cmd(b'spawn_container',
-                                    {'node': str(self.pk, 'ascii'),
+        uuid = self.conn().send_cmd('spawn_container',
+                                    {'node': self.pk,
                                      'layer_stack': Sender.layer_stack(image),
                                      'description': descr,
                                      'env': env,
@@ -65,7 +65,7 @@ class Node:
 
         # Create the container object
         self.containers[uuid] = Container(self, image, uuid, descr, env)
-        logging.info("Spawning container: " + str(uuid, 'ascii'))
+        logging.info("Spawning container: " +uuid)
 
         return self.containers[uuid]
 
@@ -75,11 +75,15 @@ class Node:
         logging.debug("Stats updated for node: " + self.pk)
 
     def container_status_update(self, msg):
-        # triggered when a container goes from spawning to running
-        if 'status' in msg.params and msg.params['status'] == 'running':
-            logging.info("Container is running: " + str(msg.uuid, 'ascii'))
-            self.containers[msg.uuid].ip = msg.params
-            self.containers[msg.uuid].is_ready()
+        container = self.containers[msg.uuid]
+
+        if 'exception' in msg.params:
+            raise ValueError(msg.params['exception'])
+
+        if msg.params['status'] == 'running':
+            logging.info("Container is running: " + msg.uuid)
+            container.ip = msg.params['ip']
+            container.is_ready()
 
     def __repr__(self):
         return "<tfnz.Node object at %x (pk=%s containers=%d)>" % (id(self), self.pk, len(self.containers))

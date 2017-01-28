@@ -95,7 +95,7 @@ class Location(Waitable):
 
         Sender(self.conn, docker_image_id).send()
 
-    def ranked_nodes(self, bias_memory: bool=True) -> [Node]:
+    def ranked_nodes(self, bias_memory: bool=False) -> [Node]:
         """Ranks the nodes in order of cpu or memory availability.
 
         :param bias_memory: prioritise memory availability over cpu.
@@ -187,11 +187,10 @@ class Location(Waitable):
         return tnl
 
     def wait_http_200(self, container, dest_port, fqdn, path) -> Tunnel:
-        logging.info("Waiting on http 200: " + str(container.uuid, 'ascii'))
+        logging.info("Waiting on http 200: " + container.uuid)
         return self.browser_onto(container, dest_port, fqdn, path, actual_browser=False)
 
     def destroy_tunnel(self, tunnel: Tunnel):
-        """Destroy a tunnel"""
         tunnel.destroy()
         del self.tunnels[tunnel.uuid]
 
@@ -216,7 +215,7 @@ class Location(Waitable):
             else:
                 for node in nodes:
                     description = list(node.items())[0]
-                    pk = description[0].encode('ascii')
+                    pk = description[0]
                     resource_values = description[1]
                     self.nodes[pk] = Node(self, pk, self.conn, resource_values)
 
@@ -226,11 +225,11 @@ class Location(Waitable):
         else:
             logging.info(msg.params['log'])
 
-    _commands = {b'resource_offer': (_resource_offer, [], False),
-                 b'tunnel_up': (_tunnel_up, [], False),
-                 b'from_proxy': (_from_proxy, ['proxy'], False),
-                 b'close_proxy': (_close_proxy, ['proxy'], False),
-                 b'log': (_log, ['error', 'log'], False)}
+    _commands = {'resource_offer': (_resource_offer, [], False),
+                 'tunnel_up': (_tunnel_up, [], False),
+                 'from_proxy': (_from_proxy, ['proxy'], False),
+                 'close_proxy': (_close_proxy, ['proxy'], False),
+                 'log': (_log, ['error', 'log'], False)}
 
     def __repr__(self):
         return "<tfnz.Location object at %x (nodes=%d)>" % (id(self), len(self.nodes))

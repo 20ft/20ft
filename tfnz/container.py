@@ -26,7 +26,7 @@ requests_unixsocket.monkeypatch()
 
 class Container(Waitable):
     """An object representing a single container. Do not instantiate directly, use node.spawn."""
-    def __init__(self, parent, image: str, uuid: bytes, docker_config: dict=None, env: dict=None):
+    def __init__(self, parent, image: str, uuid: str, docker_config: dict=None, env: dict=None):
         super().__init__()
         self.parent = weakref.ref(parent)
         self.location = weakref.ref(self.parent().parent())
@@ -41,14 +41,14 @@ class Container(Waitable):
     def destroy(self):
         """Destroy this container."""
         self.wait_until_ready()
-        self.conn().send_cmd(b'destroy_container',
-                             {'node': str(self.parent().pk, 'ascii'),
-                              'container': str(self.uuid, 'ascii')})
+        self.conn().send_cmd('destroy_container',
+                             {'node': self.parent().pk,
+                              'container': self.uuid})
         loc = self.parent().parent()
         for tun in list(loc.tunnels.values()):
             if tun.container is self:
                 loc.destroy_tunnel(tun)
-        logging.info("Destroyed container: " + str(self.uuid, 'ascii'))
+        logging.info("Destroyed container: " + self.uuid)
 
     def attach_tunnel(self, dest_port: int, localport: int=None, bind: str=None) -> Tunnel:
         """Creates a TCP proxy between localhost and a container.
@@ -108,19 +108,20 @@ class Container(Waitable):
         :param termination_callback: For when the process completes - signature (object)
         :return: A Process object.
 
+        IMPORTANT! the callback returns raw bytes, not a string. You may need to use .decode()
         Note that the remote command can be either the string ("ps faxu") format or list (["ps", "faxu"]) format."""
         self.wait_until_ready()
 
         # Cool, go.
         if isinstance(remote_command, str):
             remote_command = [remote_command]
-        logging.info("Container (%s) spawning process: %s" % (str(self.uuid, 'ascii'), json.dumps(remote_command)))
+        logging.info("Container (%s) spawning process: %s" % (self.uuid, json.dumps(remote_command)))
 
         # get the node to launch the process for us
         # we need the uuid of the spawn command because it's used to indicate when the process has terminated
-        spawn_command_uuid = self.conn().send_cmd(b'spawn_process',
-                             {'node': str(self.parent().pk, 'ascii'),
-                              'container': str(self.uuid, 'ascii'),
+        spawn_command_uuid = self.conn().send_cmd('spawn_process',
+                             {'node': self.parent().pk,
+                              'container': self.uuid,
                               'command': remote_command}, reply_callback=self._process_callback)
         rtn = Process(self, spawn_command_uuid, data_callback, termination_callback)
         self.processes[spawn_command_uuid] = rtn
@@ -134,9 +135,9 @@ class Container(Waitable):
 
         Since the file gets loaded into memory, this is probably not the best way to move large files."""
         self.wait_until_ready()
-        return self.conn().send_blocking_cmd(b'fetch',
-                                             {'node': str(self.parent().pk, 'ascii'),
-                                              'container': str(self.uuid, 'ascii'),
+        return self.conn().send_blocking_cmd('fetch',
+                                             {'node': self.parent().pk,
+                                              'container': self.uuid,
                                               'filename': filename}).bulk
 
     def put(self, filename: str, data: bytes):
@@ -148,9 +149,9 @@ class Container(Waitable):
         This will just overwrite so be careful. Note that new file paths are created on demand.
         """
         self.wait_until_ready()
-        self.conn().send_blocking_cmd(b'put',
-                                      {'node': str(self.parent().pk, 'ascii'),
-                                       'container': str(self.uuid, 'ascii'),
+        self.conn().send_blocking_cmd('put',
+                                      {'node': self.parent().pk,
+                                       'container': self.uuid,
                                        'filename': filename}, bulk=data)
 
     def logs(self) -> [dict]:
@@ -161,28 +162,28 @@ class Container(Waitable):
         The dictionary keys are: 'log' - a single log item; 'stream' - the stream it was received on;
         and 'time' - the server timestamp when the message was logged."""
         self.wait_until_ready()
-        raw = self.conn().send_blocking_cmd(b'fetch_log',
-                                           {'node': str(self.parent().pk, 'ascii'),
-                                            'container': str(self.uuid, 'ascii')}).bulk
+        raw = self.conn().send_blocking_cmd('fetch_log',
+                                           {'node': self.parent().pk,
+                                            'container': self.uuid}).bulk
         lines = str(raw, 'utf-8').split('\n')
         return [json.loads(line) for line in lines if line != '']
 
     def _process_callback(self, msg):
         # we have to use message id to identify the container because it's needed to create a long running conversation
         # obituary?
-        if msg.command == b'' and msg.params == {} and msg.bulk == b'no_more_replies':
-            logging.info("Process terminated: " + str(msg.uuid, 'ascii'))
+        if msg.command == '' and msg.params == {} and msg.bulk == 'no_more_replies':
+            logging.info("Process terminated: " + msg.uuid)
             del self.processes[msg.uuid]
             return
 
         # normal arrival of data
         if msg.uuid not in self.processes:
-            logging.debug("Message arrived for an unknown process: " + str(msg.uuid, 'ascii'))
+            logging.debug("Message arrived for an unknown process: " + msg.uuid)
             return
         logging.debug("Received data from process (%s): \n%s" %
-                      (str(msg.uuid, 'ascii'), str(msg.bulk, 'utf-8')))
+                      (msg.uuid, str(msg.bulk, 'utf-8')))
         self.processes[msg.uuid].give_me_messages(msg)
 
     def __repr__(self):
-        return "<tfnz.Container object at %x (image=%s uuid=%s)>" % (id(self), self.image, str(self.uuid, 'ascii'))
+        return "<tfnz.Container object at %x (image=%s uuid=%s)>" % (id(self), self.image, self.uuid)
 
