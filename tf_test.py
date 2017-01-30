@@ -33,7 +33,7 @@ class TfTest(TestCase):
         self.assertTrue(nodes[0].parent() == TfTest.location, 'Node has the wrong parent')
         if len(nodes) == 1:
             return
-        self.assertTrue(nodes[0].stats['memory'] > nodes[1].stats['memory'], 'Node ranking is wrong')
+        self.assertTrue(nodes[0].stats['cpu'] < nodes[1].stats['cpu'], 'Node ranking is wrong')
         self.assertTrue(self.location.best_node() == nodes[0], 'Not reporting the best node and top of rank the same')
 
     def test_spawn_awake(self):
@@ -76,6 +76,28 @@ class TfTest(TestCase):
         preboot = {'/usr/share/nginx/html/index.html': 'Hello World!'}
         container = TfTest.location.best_node().spawn(TfTest.image, pre_boot_files=preboot, no_image_check=True)
         self.assertTrue(b'Hello World!' in container.fetch('/usr/share/nginx/html/index.html'))
+
+    def test_firewalling(self):
+        # can we connect one container to another?
+        server = TfTest.location.best_node().spawn(TfTest.image, no_image_check=True)
+        client = TfTest.location.best_node().spawn(TfTest.image, sleep=True, no_image_check=True)
+        server.wait_until_ready()
+        # not yet
+        cmd = "/native/usr/bin/wget -T 1 -t 1 -O /dev/null http://" + server.ip
+        while True:
+            time.sleep(1)
+            reply = client.spawn_process(cmd).wait_until_complete().decode()
+            if not "Network is down" in reply:
+                break
+        self.assertTrue("timed out" in reply, 'Should not have got a reply')
+        # connect them
+        server.allow_connection_from(client)
+        reply = client.spawn_process(cmd).wait_until_complete().decode()
+        self.assertTrue("'/dev/null' saved" in reply, 'Did not manage to connect containers')
+        # disconnect again
+        server.disallow_connection_from(client)
+        reply = client.spawn_process(cmd).wait_until_complete().decode()
+        self.assertTrue("timed out" in reply, 'Did not manage to disconnect containers')
 
     def test_file_handling(self):
         # tests raising exceptions, too

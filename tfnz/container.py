@@ -100,6 +100,26 @@ class Container(Waitable):
         The object reference by tunnel will be unusable on return."""
         return self.location().destroy_tunnel(tunnel)
 
+    def allow_connection_from(self, container):
+        """Allow another container to call this one over ipv4
+
+        :param container: The container that will be allowed to call"""
+        self.wait_until_ready()
+        container.wait_until_ready()
+        self.conn().send_cmd('allow_connection', {'node': self.parent().pk,
+                                                  'container': self.uuid,
+                                                  'ip': container.ip})
+
+    def disallow_connection_from(self, container):
+        """Stop allowing another container to call this one over ipv4
+
+        :param container: The container that will no longer be allowed to call"""
+        self.wait_until_ready()
+        container.wait_until_ready()
+        self.conn().send_cmd('disallow_connection', {'node': self.parent().pk,
+                                                     'container': self.uuid,
+                                                     'ip': container.ip})
+
     def spawn_process(self, remote_command, data_callback=None, termination_callback=None) -> Process:
         """Spawn a process within a container, receives data asynchronously via a callback.
 
