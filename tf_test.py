@@ -81,9 +81,8 @@ class TfTest(TestCase):
         # can we connect one container to another?
         server = TfTest.location.best_node().spawn(TfTest.image, no_image_check=True)
         client = TfTest.location.best_node().spawn(TfTest.image, sleep=True, no_image_check=True)
-        server.wait_until_ready()
         # not yet
-        cmd = "/native/usr/bin/wget -T 1 -t 1 -O /dev/null http://" + server.ip
+        cmd = "/native/usr/bin/wget -T 1 -t 1 -O /dev/null http://" + server.ip()
         while True:
             time.sleep(1)
             reply = client.spawn_process(cmd).wait_until_complete().decode()

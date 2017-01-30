@@ -82,7 +82,7 @@ class Node:
 
         if msg.params['status'] == 'running':
             logging.info("Container is running: " + msg.uuid)
-            container.ip = msg.params['ip']
+            container._ip = msg.params['ip']
             container.is_ready()
 
     def __repr__(self):

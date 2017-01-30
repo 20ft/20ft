@@ -15,6 +15,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 import logging
 import json
 import weakref
+import os
+import time
 import requests
 import requests_unixsocket
 from .waitable import Waitable
@@ -36,7 +38,7 @@ class Container(Waitable):
         self.processes = {}
         self.docker_config = docker_config
         self.env = env
-        self.ip = None
+        self._ip = None
 
     def destroy(self):
         """Destroy this container."""
@@ -49,6 +51,11 @@ class Container(Waitable):
             if tun.container is self:
                 loc.destroy_tunnel(tun)
         logging.info("Destroyed container: " + self.uuid)
+
+    def ip(self):
+        """Return this container's internal IP address"""
+        self.wait_until_ready()
+        return self._ip
 
     def attach_tunnel(self, dest_port: int, localport: int=None, bind: str=None) -> Tunnel:
         """Creates a TCP proxy between localhost and a container.
@@ -105,20 +112,18 @@ class Container(Waitable):
 
         :param container: The container that will be allowed to call"""
         self.wait_until_ready()
-        container.wait_until_ready()
         self.conn().send_cmd('allow_connection', {'node': self.parent().pk,
                                                   'container': self.uuid,
-                                                  'ip': container.ip})
+                                                  'ip': container.ip()})
 
     def disallow_connection_from(self, container):
         """Stop allowing another container to call this one over ipv4
 
         :param container: The container that will no longer be allowed to call"""
         self.wait_until_ready()
-        container.wait_until_ready()
         self.conn().send_cmd('disallow_connection', {'node': self.parent().pk,
                                                      'container': self.uuid,
-                                                     'ip': container.ip})
+                                                     'ip': container.ip()})
 
     def spawn_process(self, remote_command, data_callback=None, termination_callback=None) -> Process:
         """Spawn a process within a container, receives data asynchronously via a callback.
