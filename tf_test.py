@@ -22,7 +22,7 @@ class TfTest(TestCase):
         cls.launched_process = 'nginx: worker process'
         cls.root_reply_contains = '<title>Welcome to nginx!</title>'
         cls.acceptable_boot_time = 10
-        cls.location = Location(debug_log=False)
+        cls.location = Location(debug_log=True)
         cls.location.ensure_image_uploaded(cls.image)
 
     def test_node(self):
@@ -97,6 +97,16 @@ class TfTest(TestCase):
         server.disallow_connection_from(client)
         reply = client.spawn_process(cmd).wait_until_complete().decode()
         self.assertTrue("timed out" in reply, 'Did not manage to disconnect containers')
+
+    def test_connect_race(self):
+        # nasty race condition when constructing locations
+        loc1 = Location()
+        loc2 = Location()
+        node1 = loc1.best_node()
+        node2 = loc2.best_node()
+        node1.spawn(TfTest.image, no_image_check=True)
+        node2.spawn(TfTest.image, no_image_check=True)
+        self.assertTrue(True)
 
     def test_file_handling(self):
         # tests raising exceptions, too
