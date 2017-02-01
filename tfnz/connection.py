@@ -73,7 +73,7 @@ class Connection(Waitable):
 
         # create a cross thread socket so we can send from the main thread and we forward on the background thread
         self.send_skt = zmq.Context.instance().socket(zmq.DEALER)
-        self.send_skt.connect("inproc://x_thread/" + str(id(self)))
+        self.send_skt.connect(self.inproc_name())
 
     def start(self):
         """Start message loop - separate from __init__ so we get a chance to register_exclusive/register_commands"""
@@ -96,7 +96,7 @@ class Connection(Waitable):
         # create the cross thread socket for forwarding
         # since there can be more than one connection in the same process we need to give it a unique id
         self.x_thread_receive = zmq.Context.instance().socket(zmq.DEALER)
-        self.x_thread_receive.bind("inproc://x_thread/" + str(id(self)))
+        self.x_thread_receive.bind(self.inproc_name())
         logging.debug("Cross-thread socket is: %x" % id(self.x_thread_receive))
 
         # kick off a message loop
@@ -104,6 +104,9 @@ class Connection(Waitable):
         self.loop.register_exclusive(self.x_thread_receive, self._forward)
         self.wait_until_ready()
         self.loop.run()  # blocks until loop.stop is called
+
+    def inproc_name(self):
+        return "inproc://x_thread/" + str(id(self))
 
     def send_cmd(self, cmd: str, params=None, bulk: bytes=b'', reply_callback=None):
         """Sends a command to the location, can route replies. Call from either thread, returns uuid.
@@ -170,7 +173,7 @@ class Connection(Waitable):
     def _forward(self, skt):
         """Picked up from the foreground thread"""
         msg = Message.receive(skt)
-        # logging.debug("Delivering from main/other thread: " + str(msg))
+        logging.debug("Delivering from main/other thread: " + str(msg))
         msg.forward(self.skt)
 
     def _unblock(self, msg: Message):
