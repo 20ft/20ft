@@ -34,7 +34,6 @@ class Process(Waitable):
 
     def destroy(self):
         """Destroy this process."""
-        # No good at destroying backgrounded processes
         if self.dead:
             return
         self.dead = True
@@ -45,6 +44,16 @@ class Process(Waitable):
         self.is_ready()  # release the blocker
         if self.terminated_callback is not None:
             self.terminated_callback(self)
+
+    def stdin(self, data):
+        """Inject data into stdin for the process.
+
+        :param data: The data to inject."""
+        self.conn().send_cmd('stdin_process',
+                             params={'node': self.node().pk,
+                                     'container': self.parent().uuid,
+                                     'process': self.uuid},
+                             bulk=data.encode())
 
     def wait_until_complete(self):
         """Wait until the process is complete. If using default callback, returns all data collected."""
