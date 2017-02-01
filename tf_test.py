@@ -86,7 +86,7 @@ class TfTest(TestCase):
         while True:
             time.sleep(1)
             reply = client.spawn_process(cmd).wait_until_complete().decode()
-            if not "Network is down" in reply:
+            if "Network is down" not in reply:
                 break
         self.assertTrue("timed out" in reply, 'Should not have got a reply')
         # connect them

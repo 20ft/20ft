@@ -65,7 +65,7 @@ class Node:
 
         # Create the container object
         self.containers[uuid] = Container(self, image, uuid, descr, env)
-        logging.info("Spawning container: " +uuid)
+        logging.info("Spawning container: " + uuid)
 
         return self.containers[uuid]
 

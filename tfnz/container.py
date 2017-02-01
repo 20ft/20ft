@@ -205,8 +205,7 @@ class Container(Waitable):
         if msg.uuid not in self.processes:
             logging.debug("Message arrived for an unknown process: " + msg.uuid)
             return
-        logging.debug("Received data from process (%s): \n%s" %
-                      (msg.uuid, str(msg.bulk, 'utf-8')))
+        logging.debug("Received data from process: " + msg.uuid)
         self.processes[msg.uuid].give_me_messages(msg)
 
     def __repr__(self):
