@@ -24,9 +24,9 @@ import zmq.auth
 import zmq.error
 import shortuuid
 from .message import Message
-from .keys import KeyPair
+from . import KeyPair
 from .loop import Loop
-from .waitable import Waitable
+from . import Waitable
 
 
 class Connection(Waitable):
@@ -77,7 +77,7 @@ class Connection(Waitable):
 
     def start(self):
         """Start message loop - separate from __init__ so we get a chance to register_exclusive/register_commands"""
-        self.is_ready()
+        self.mark_as_ready()
 
     def _start(self):
         """The message loop runs on a background thread"""
@@ -101,7 +101,7 @@ class Connection(Waitable):
 
         # kick off a message loop
         self.loop = Loop(self.skt, self.keys.public)  # loop has to be constructed on this thread because socket
-        self.loop.register_exclusive(self.x_thread_receive, self._forward)
+        self.loop.register_exclusive(self.x_thread_receive, self._forward, "Cross thread socket")
         self.wait_until_ready()
         self.loop.run()  # blocks until loop.stop is called
 
@@ -173,7 +173,7 @@ class Connection(Waitable):
     def _forward(self, skt):
         """Picked up from the foreground thread"""
         msg = Message.receive(skt)
-        logging.debug("Delivering from main/other thread: " + str(msg))
+        # logging.debug("Delivering from main/other thread: " + str(msg))
         msg.forward(self.skt)
 
     def _unblock(self, msg: Message):
@@ -183,5 +183,5 @@ class Connection(Waitable):
         self.block_reply.release()
 
     def __repr__(self):
-        return "<tfnz.Connection object at %s (location=%s)>" % (id(self), self.location)
+        return "<tfnz.connection.Connection object at %s (location=%s)>" % (id(self), self.location)
 

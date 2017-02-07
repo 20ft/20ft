@@ -38,6 +38,7 @@ class Message:
 
     def reply(self, socket, params=None, bulk=b''):
         """Reply to a previously received message."""
+        self.parts[0] = b''
         self.parts[2] = json.dumps(params).encode('ascii') if params is not None else b'{}'
         self.parts[3] = bulk
         socket.send_multipart(self.parts)
@@ -63,5 +64,5 @@ class Message:
                            'raw_params': self.raw_params})
 
     def __repr__(self):
-        return "<tfnz.Message object at %x (command=%s uuid=%s params=%s)>" % \
+        return "<tfnz.message.Message object at %x (command=%s uuid=%s params=%s)>" % \
                (id(self), self.command, self.uuid, self.params)

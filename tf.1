@@ -7,8 +7,8 @@ tf - launch a container on 20ft.nz
 [\fB\-v\fR]
 [\fB\-\-loc \fIxxx.20ft.nz\fR]
 [\fB\-\-local_broker \fIyyy.local\fR]
-[\fB\-\-bind \fIaa.bb.cc.dd\fIn\fR]
-[\fB\-\-latest\fR]
+[\fB\-\-public\fR]
+[\fB\-\-offset \f+n\fR]
 [\fB\-\-json \fIfilename\fR]
 [\fB\-\-browser\fR
 [\fB\-\-domain \fIhost.name\fR]
@@ -36,8 +36,11 @@ Use an (optional) non-default location (fqdn)
 .BR \-\-local_broker\ yyy.local
 An optional (local) ip for the broker
 .TP
-.BR \-\-bind\ aa.bb.cc.dd
-Binds to an address other than localhost
+.BR \-\-public
+Binds to the lan-external address instead of localhost
+.TP
+.BR \-\-offset\ +n
+An offset to apply to container exposed ports to create the local port
 .TP
 .BR \-\-json\ filename
 Writes a file describing state (deleted on exit)
@@ -85,11 +88,11 @@ tf --browser www.example.host .
 .RE
 .fi
 .PP
-Launch nginx container with an environment variable set.
+Launch nginx container, externally accessible, port 8080 mapped to 80 on the container, and with an environment variable set.
 .PP
 .nf
 .RS
-tf nginx DOMAIN=test.org
+tf --public --offset 8000 nginx DOMAIN=test.org
 .RE
 .fi
 .PP

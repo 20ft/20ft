@@ -16,11 +16,10 @@ import logging
 import zmq
 import time
 import threading
-import os
 from .message import Message
 
 
-class Loop():
+class Loop:
 
     def __init__(self, skt, pk, message_type=Message):
         super().__init__()
@@ -44,8 +43,9 @@ class Loop():
         self.main_thread = threading.get_ident()
         self.p = zmq.Poller()
         self.p.register(self.skt, zmq.POLLIN)  # so register_reply will work even if we don't register anything else
+        logging.debug("Message loop has registered: " + str(self.skt))
 
-    def register_exclusive(self, skt, handler):
+    def register_exclusive(self, skt, handler, comment=""):
         """Registers a socket and an object.handler that gets called to receive all events. Can do more than one."""
         # function signature: def callback(self, socket)
         if self.running:
@@ -55,11 +55,15 @@ class Loop():
             raise RuntimeError("Tried to register a socket exclusively twice")
         if skt in self.command_handlers:
             raise RuntimeError("Socket is already registered with commands")
-        self.exclusive_handlers[skt] = handler
-        self.p.register(skt, zmq.POLLIN)
-        logging.debug("Message loop has registered: " + str(skt))
 
-    def register_commands(self, skt, obj, commands):
+        self.exclusive_handlers[skt] = handler
+        if skt is not self.skt:  # OK to reclassify the existing socket but no OK to re-register it
+            self.p.register(skt, zmq.POLLIN)
+        else:
+            logging.debug("Not registering with poll twice (exclusive): " + str(skt))
+        logging.debug("Message loop has registered exclusive: " + str(skt) + " " + comment)
+
+    def register_commands(self, skt, obj, commands, comment=""):
         """Register command callbacks directly."""
         # A single shot per socket. Pass commands as {'name': _callback, ... }
         if self.running:
@@ -70,8 +74,11 @@ class Loop():
         if skt in self.command_handlers:
             raise RuntimeError("Tried to register a series of commands twice for the same socket")
         self.command_handlers[skt] = (obj, commands)
-        self.p.register(skt, zmq.POLLIN)
-        logging.debug("Message loop has registered: " + str(skt))
+        if skt is not self.skt:  # OK to reclassify the existing socket but no OK to re-register it
+            self.p.register(skt, zmq.POLLIN)
+        else:
+            logging.debug("Not registering with poll twice (commands): " + str(skt))
+        logging.debug("Message loop has registered for commands: " + str(skt) + " " + comment)
 
     def register_reply(self, command_uuid, callback):
         """Hooking the reply to a command. Note that this will not override an exclusive socket."""
@@ -89,23 +96,22 @@ class Loop():
         else:
             logging.debug("Called unregister_reply for a uuid that isn't hooked")
 
-    def register_fd_socket(self, socket, callback):
+    def register_fd_socket(self, fd, callback):
         """Registering a socket that's part of a proxy"""
         if callback is not None:
-            logging.debug("Registered a socket fileno: " + str(socket))
-            self.fd_handlers[socket] = callback
-            self.p.register(socket, zmq.POLLIN)
-            logging.debug("Message loop has registered: " + str(socket))
+            logging.debug("Registering a socket fileno: " + str(fd))
+            self.fd_handlers[fd] = callback
+            self.p.register(fd, zmq.POLLIN)
         else:
             raise RuntimeError("Tried to register an fd socket but passed None for the callback")
 
-    def unregister_fd_socket(self, socket):
+    def unregister_fd_socket(self, fd):
         """Unregistering proxy socket"""
-        if socket in self.fd_handlers:
-            logging.debug("Unregistered a socket fileno: " + str(socket))
-            del self.fd_handlers[socket]
-            self.p.unregister(socket)
-            del socket
+        if fd in self.fd_handlers:
+            logging.debug("Unregistering a socket fileno: " + str(fd))
+            del self.fd_handlers[fd]
+            self.p.unregister(fd)
+            del fd
 
     def register_retry(self, obj):
         if obj not in self.retry:
@@ -121,10 +127,11 @@ class Loop():
     def on_other_error(self, callback):
         self.other_error_handler = callback
 
-    def stop(self, wait=True):
+    def stop(self):
         """Stops the message loop."""
         # the broker is single threaded so if you wait on loop finishing you're going to have a bad time, hence 'wait'
         self.running = False
+        wait = (threading.get_ident() == threading.main_thread())  # only wait if on the main thread
         while wait and not self.finished:
             logging.debug("Waiting for loop to finish...")
             time.sleep(0.1)
@@ -213,5 +220,5 @@ class Loop():
         self.finished = True
 
     def __repr__(self):
-        return "<tfnz.Loop object at %x (exclusive=%d commands=%d replies_callbacks=%d)>" % \
+        return "<tfnz.loop.Loop object at %x (exclusive=%d commands=%d replies_callbacks=%d)>" % \
                (id(self), len(self.exclusive_handlers), len(self.command_handlers), len(self.reply_callbacks))

@@ -44,8 +44,7 @@ class Node:
            The resulting Container is initially a placeholder until the container has spawned.
            To block until it has actually spawned call wait_until_ready() on the container.
            Any layers that need to be uploaded to the location are uploaded automatically.
-           Noboot can be used to effect pre-boot changes in the container (configurations etc), note that
-           the container will not be marked as ready until it actually has booted."""
+           Note that the container will not be marked as ready until it actually has booted."""
         if not no_image_check:
             self.parent().ensure_image_uploaded(image)
 
@@ -69,13 +68,34 @@ class Node:
 
         return self.containers[uuid]
 
+    def destroy_container(self, container: Container):
+        """Destroy a container running on this node. Will also destroy any tunnels onto the container.
+
+        :param container: The container to be destroyed."""
+        container.ensure_alive()
+        loc = self.parent()
+        for tun in list(loc.tunnels.values()):
+            if tun.container is container:
+                loc.destroy_tunnel(tun)
+        self.containers[container.uuid].internal_destroy()
+        del self.containers[container.uuid]
+
+    def all_containers(self) -> [Container]:
+        """Returns all the containers running on this node (for *this* session)"""
+        return list(self.containers.values())
+
     def update_stats(self, stats):
         # the node telling us it's current resource state
         self.stats = stats
         logging.debug("Stats updated for node: " + self.pk)
 
     def container_status_update(self, msg):
-        container = self.containers[msg.uuid]
+        try:
+            container = self.containers[msg.uuid]
+            if container.bail_if_dead():
+                return
+        except KeyError:
+            logging.warning("Status update was sent for a non-existent container")
 
         if 'exception' in msg.params:
             raise ValueError(msg.params['exception'])
@@ -83,7 +103,7 @@ class Node:
         if msg.params['status'] == 'running':
             logging.info("Container is running: " + msg.uuid)
             container._ip = msg.params['ip']
-            container.is_ready()
+            container.mark_as_ready()
 
     def __repr__(self):
-        return "<tfnz.Node object at %x (pk=%s containers=%d)>" % (id(self), self.pk, len(self.containers))
+        return "<tfnz.node.Node object at %x (pk=%s containers=%d)>" % (id(self), self.pk, len(self.containers))

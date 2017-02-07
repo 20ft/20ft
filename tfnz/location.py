@@ -20,12 +20,11 @@ import time
 import os
 from requests.exceptions import ConnectionError
 from subprocess import call, DEVNULL
-from .waitable import Waitable
 from .node import Node
 from .connection import Connection
 from .send import Sender
 from .tunnel import Tunnel
-from . import find_unused_local_port, description
+from . import find_unused_local_port, description, Waitable, docker_bin
 
 
 # A NOTE ON STR VS BYTES
@@ -35,6 +34,8 @@ from . import find_unused_local_port, description
 # Long running conversations (i.e. from a process back to the client) are identified by message uuid's
 
 file_not_found_text = """
+-----THIS IS THE ERROR YOU SEE IF YOU HAVEN'T PASTED IN YOUR KEYS YET-----
+
 There is no ~/.20ft/default_location so cannot choose default location.
 Either write the fqdn of the default location into ~/.20ft/default_location or pass explicitly.
 """
@@ -45,7 +46,7 @@ class Location(Waitable):
 
         :param location: An optional fqdn of the location (i.e. tiny.20ft.nz).
         :param location_ip: A optional explicit ip for the broker.
-        :param deubg_log: Optionally configure Python logging. True/False to select debug/info logging levels."""
+        :param debug_log: Optionally configure Python logging. True/False to select debug/info logging levels."""
 
     def __init__(self, location: str=None, location_ip: str=None, debug_log: bool=None):
         super().__init__()
@@ -62,7 +63,7 @@ class Location(Waitable):
                 with open(os.path.expanduser('~/.20ft/default_location'), 'r') as f:
                     location = f.read().strip('\n')
             except FileNotFoundError:
-                raise ValueError(file_not_found_text)
+                raise RuntimeError(file_not_found_text)
         self.location = location
 
         self.nodes = {}
@@ -73,6 +74,7 @@ class Location(Waitable):
         self.conn.register_commands(self, Location._commands)
         self.send = None
         self.conn.start()
+        self.wait_until_ready()  # yeah, block the constructor, why not.
 
     def ensure_image_uploaded(self, docker_image_id: str):
         """Sends missing docker layers to the location.
@@ -81,16 +83,16 @@ class Location(Waitable):
 
         This is not a necessary step and is implied when spawning a container unless specifically disabled.
         The layers are uploaded on a background thread."""
-        self.wait_until_ready()
-
         logging.info("Ensuring layers are uploaded for: " + docker_image_id)
 
         # See if we have it locally
         try:
             description(docker_image_id)
         except ValueError:
+            if docker_bin is None:
+                raise RuntimeError("Could not find local docker")
             logging.info("Fetching with 'docker pull' (may take some time): " + docker_image_id)
-            if call(['/usr/local/bin/docker', 'pull', docker_image_id], stdout=DEVNULL, stderr=DEVNULL) != 0:
+            if call([docker_bin, 'pull', docker_image_id], stdout=DEVNULL, stderr=DEVNULL) != 0:
                 raise ValueError("Could not docker pull image: " + docker_image_id)
 
         Sender(self.conn, docker_image_id).send()
@@ -104,7 +106,6 @@ class Location(Waitable):
         Not a necessary step but useful if you wish to explicitly schedule containers on the same node.
         The output of best_node is affected by the cpu/memory bias.
         Note that the difference in processor performance is accounted for and is measured in passmarks."""
-        self.wait_until_ready()
         nodes = list(self.nodes.values())
         if bias_memory:
             self.last_best_nodes = sorted(nodes, key=lambda node: node.stats['memory'], reverse=True)
@@ -121,7 +122,6 @@ class Location(Waitable):
         Iterates over the list of nodes to aid with load balancing.
         For explicit control use ranked_nodes."""
         # initialise if we need to
-        self.wait_until_ready()
         if self.last_best_nodes is None:
             self.ranked_nodes()
         if self.last_best_node_idx is None:
@@ -142,8 +142,6 @@ class Location(Waitable):
         return rtn
 
     def tunnel_onto(self, container, port, localport, bind) -> Tunnel:
-        self.wait_until_ready()
-        container.wait_until_ready()
         if localport is None:
             localport = find_unused_local_port()
 
@@ -163,7 +161,7 @@ class Location(Waitable):
         # OK
         tnl = self.tunnel_onto(container, dest_port, None, None)
         tnl.wait_until_ready()
-        url = 'http://%s:%d/%s' % (fqdn, tnl.localport, path if path is not None else '')
+        url = 'http://%s:%d/%s' % (fqdn, tnl.lp, path if path is not None else '')
 
         # poll until it's alive
         attempts_remaining = 60
@@ -191,21 +189,22 @@ class Location(Waitable):
         return self.browser_onto(container, dest_port, fqdn, path, actual_browser=False)
 
     def destroy_tunnel(self, tunnel: Tunnel):
-        tunnel.destroy()
+        tunnel.internal_destroy()
         del self.tunnels[tunnel.uuid]
 
     def _tunnel_up(self, msg):
-        self.tunnels[msg.uuid].tunnel_up(msg)
+        self._if_tunnel(msg, Tunnel.tunnel_up)
 
     def _from_proxy(self, msg):
-        self.tunnels[msg.uuid].from_proxy(msg)
+        self._if_tunnel(msg, Tunnel.from_proxy)
 
     def _close_proxy(self, msg):
-        self.tunnels[msg.uuid].close_proxy(msg.params['proxy'])
+        self._if_tunnel(msg, Tunnel.close_proxy)
+        self.tunnels[msg.uuid].close_proxy(msg)
 
     def _resource_offer(self, msg):
         logging.debug("Location has sent resource offer")
-        self.is_ready()
+        self.mark_as_ready()
 
         # the list of available nodes
         if 'nodes' in msg.params:
@@ -219,17 +218,28 @@ class Location(Waitable):
                     resource_values = description[1]
                     self.nodes[pk] = Node(self, pk, self.conn, resource_values)
 
+    def _update_stats(self, msg):
+        node = self.nodes[msg.params['node']]
+        node.update_stats(msg.params)
+
     def _log(self, msg):
         if msg.params['error']:
             logging.error(msg.params['log'])
         else:
             logging.info(msg.params['log'])
 
+    def _if_tunnel(self, msg, op):
+        try:
+            op(self.tunnels[msg.uuid], msg)
+        except KeyError:
+            logging.warning("Message arrived for a non-existent tunnel")
+
     _commands = {'resource_offer': (_resource_offer, [], False),
+                 'update_stats': (_update_stats, ['node', 'cpu', 'memory', 'blacklist'], False),
                  'tunnel_up': (_tunnel_up, [], False),
                  'from_proxy': (_from_proxy, ['proxy'], False),
                  'close_proxy': (_close_proxy, ['proxy'], False),
                  'log': (_log, ['error', 'log'], False)}
 
     def __repr__(self):
-        return "<tfnz.Location object at %x (nodes=%d)>" % (id(self), len(self.nodes))
+        return "<tfnz.location.Location object at %x (nodes=%d)>" % (id(self), len(self.nodes))

@@ -17,7 +17,7 @@ import hashlib
 import logging
 import io
 from tarfile import TarFile
-from . import description
+from . import description, docker_bin
 
 
 class Sender:
@@ -60,8 +60,10 @@ class Sender:
 
         # get docker to export *all* the layers (not like we have a choice, would be happy to be informed otherwise)
         # note that making a fake registry was tried and found to be horrible
+        if docker_bin is None:
+            raise RuntimeError("Could not find local docker")
         logging.info("Getting docker to export layers...")
-        process = Popen(['/usr/local/bin/docker', 'save', self.docker_image_id], stdout=PIPE)
+        process = Popen([docker_bin, 'save', self.docker_image_id], stdout=PIPE)
         (docker_stdout, docker_stderr) = process.communicate()
         raw_top_tar = io.BytesIO(docker_stdout)
         top_tar = TarFile(fileobj=raw_top_tar)
@@ -83,3 +85,6 @@ class Sender:
                 self.req_to_go -= 1
                 if self.req_to_go == 0:  # done
                     break
+
+    def __repr__(self):
+        return "<tfnz.send.Sender object at %x (%s)>" % (id(self), self.docker_image_id)
