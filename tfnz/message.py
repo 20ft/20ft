@@ -16,6 +16,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 # identifiers for everything else are to be passed explicitly in the params (as strings, because of json)
 
 import json
+import sys
 
 
 class Message:
@@ -47,11 +48,15 @@ class Message:
     def send(socket, command, params=None, uuid='', bulk=b''):
         """Send a command to the location."""
         # Can be called directly but much better to use Connection.send_cmd
-        parts = [command.encode('ascii'),
-                 uuid.encode('ascii'),
-                 json.dumps(params).encode('utf-8') if params is not None else b'{}',
-                 bulk]
-        socket.send_multipart(parts)
+        try:
+            parts = [command.encode('ascii'),
+                     uuid.encode('ascii'),
+                     json.dumps(params).encode('utf-8') if params is not None else b'{}',
+                     bulk]
+            socket.send_multipart(parts)
+        except TypeError as e:
+            print("\n\n\n-------You have probably passed a string where bytes were needed------\n\n\n", file=sys.stderr)
+            raise e
 
     def forward(self, socket):
         """For forwarding from the inproc connection off to the location."""

@@ -2,17 +2,45 @@
 Quick Start
 ===========
 
-These installation instructions are broadly written for macOS - other unices are just a package manager away.
+At the time of writing, 20ft can be regarded as being very much beta (although the API should now be stable). As such, it is assumed you have already been sent a key pair. If you don't have one but would like to try the service, mail `davep@polymath.tech <mailto:davep@polymath.tech>`_ and one will be sent to you.
 
-* Run the 20ft key installation script you will have been given
+Installation
+============
+
+To ready a computer for being a 20ft client, choose one of the following...
+
+**Using AWS**
+
+* Create a `pre-installed instance <https://ap-southeast-2.console.aws.amazon.com/ec2/v2/home?region=ap-southeast-2#LaunchInstanceWizard:ami=ami-b0a5a3d3>`_, ensuring the security group has ports 22 & 80 (inwards) open; then log in.
+* You will need to make note of the instance's public IP which is available from the `Instances dashboard <https://ap-southeast-2.console.aws.amazon.com/ec2/v2/home?region=ap-southeast-2#Instances:>`_, on the "Description" tab, under "IPv4 Public IP".
+* Paste your key installation script.
+
+**A Local VM**
+
+* Import and run `this OVA appliance <https://s3-ap-southeast-2.amazonaws.com/tfnz/Ubuntu+20ft-preinstalled.ova>`_.
+* Log in with ``ssh tfnz@tfnz``, password 'tfnz'.
+* Paste your key installation script.
+
+**On Bare Metal**
+
+* Install `Ubuntu 16.04 LTS <https://www.ubuntu.com/download/server>`_.
+* Paste ``curl https://20ft.nz/ubuntu-20ft-build-metal | /bin/bash``.
+* Paste your key installation script.
+
+**On macOS**
+
+* Install `homebrew <http://brew.sh>`_
 * Install the `Docker development kit <https://www.docker.com/products/docker#/mac>`_
-* Install the `official Python 3 <https://www.python.org/downloads/>`_, `libnacl <https://nacl.cr.yp.to>`_ and `zmq <http://zeromq.org>`_ (using `homebrew <http://brew.sh>`_) ... ``brew install python3 libsodium zeromq``
-* Install the 20ft sdk ... ``pip3 install tfnz``
+* Install the `official Python 3 <https://www.python.org/downloads/>`_
+* Paste ``curl https://20ft.nz/macos-20ft-build | /bin/bash``.
+* Paste your key installation script.
 
-My First Container
-==================
+Obviously skip any of the Install steps that have already been done on your machine (such as installing homebrew).
 
-Running nginx is the hello world of container orchestration. Launch your first container with ``tf -v --browser nginx``. This may take a little while, it...
+Your First Container
+====================
+
+Running nginx is the hello world of container orchestration. If the machine you're currently using has a 20ft key pair installed and is running a graphical desktop, you can launch your first container with ``tf -v --browser nginx``. This may take a little while, it...
 
 * Connects to the default location provided by the key installation script, authenticates both` client and server and `sets up an encrypted tunnel <http://curvezmq.org/page:read-the-docs#toc5>`_.
 * Ensures `nginx <https://hub.docker.com/_/nginx/>`_ is resident in your local docker image library and will pull it if not.
@@ -22,21 +50,29 @@ Running nginx is the hello world of container orchestration. Launch your first c
 * Poll until it receives an HTTP 200 then...
 * Opens a browser onto the local port so we can see the container running.
 
+If logged into a remote server launch instead with ``sudo tf -v --public nginx`` and connect your browser to the public IP of the server.
+
 Because we requested verbose logging (``-v``) you should see output something like::
 
     bash-3.2$ tf -v --browser nginx
-    1231204009.014 INFO     Connecting to: tiny.20ft.nz
-    1231204009.069 INFO     Ensuring layers are uploaded for: nginx
-    1231204009.227 INFO     No layers need uploading for: nginx
-    1231204009.325 INFO     Spawning container: Crx6x786fTrZpo66CtHE7L
-    1231204010.141 INFO     Container is running: Crx6x786fTrZpo66CtHE7L
-    1231204010.142 INFO     Created tunnel object onto: Crx6x786fTrZpo66CtHE7L (7805 -> 80)
-    1231204012.293 INFO     Connected onto: http://localhost:7805/
+    0209002658.728 INFO     Connecting to: tiny.20ft.nz
+    0209002658.787 INFO     Ensuring layers are uploaded for: nginx
+    0209002658.875 INFO     Fetching with 'docker pull' (may take some time): nginx
+    0209002742.727 INFO     No layers need uploading for: nginx
+    0209002742.738 INFO     Spawning container: wLxboFBbYj9uGW7AsYtv6k
+    0209002743.916 INFO     Container is running: wLxboFBbYj9uGW7AsYtv6k
+    0209002743.923 INFO     Created tunnel object: V45myZ4ANKAqRTv4aGBCCM (1932 -> 80)
+    0209002745.146 INFO     Connected onto: http://localhost:1932/
 
 You just launched your first container. Ctrl-C will end the process and clean up resources; and refreshing the browser will show that the container is no longer responding. Perfect.
 
-My First Docker Workflow
-========================
+A Sensible Question
+===================
+
+Why is the nginx image pulled locally when it is run in the cloud? The overall design of 20ft is assuming local development to remote deployment, hence needing to bring the image locally first. This will be changed in a future revision of the SDK.
+
+Your First Docker Workflow
+==========================
 
 It's all for nothing if we can't change the code that's running, so let's customise our nginx container by replacing the index.html. First, make a new index file::
 

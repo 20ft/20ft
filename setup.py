@@ -14,7 +14,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 from setuptools import setup
 setup(name='tfnz',
-      version='0.9.9',
+      version='1.0.0',
       author='David Preece',
       author_email='davep@polymath.tech',
       url='https://20ft.nz',

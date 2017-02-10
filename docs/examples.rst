@@ -37,13 +37,13 @@ PyCharm offers built in support for unit testing. Writing unit tests for contain
    if __name__ == '__main__':
        main()
 
-So the Location object is created only once, and we the image is 'ensured' instead of being tested on every spawn.
+So the Location object is created in a Pythonic (DRY) fashion, and the image is 'ensured' instead of being tested on every spawn.
 
 To run this:
 
 * Create a pure Python project in PyCharm.
-* Add the script above (not that you will need the requests package installed - ```pip3 install requests```)
-* Select "Edit Configurations" from the toolbar
+* Add the script above.
+* Select "Edit Configurations" from the toolbar.
 * Click the '+' button to create a new configuration - select "Python tests -> Unittests"
 * Enter the name of your script into the "Script" box, leave everything else alone.
 * Click OK

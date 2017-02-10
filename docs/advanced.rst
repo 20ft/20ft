@@ -7,65 +7,18 @@ Pre-boot files
 
 In reality it's rare that a single configuration, baked into the container image during ``docker build``, is going to be suitable for all situations. A database server will need different user configuration; a load balancer needs to be told *what* to load balance; a container under test needs to be passed fixtures and so on. The 'traditional' Docker way of doing this is to write a script that gets started in lieu of the desired process start, is passed various parameters in environment variables and is expected to render any configuration changes within the container itself before starting the desired process. They're nasty to write; worse to debug; and quickly become informal (ie undocumented) interfaces onto the underlying functionality.
 
-Thankfully there's a better way to effect a dynamic configuration and that's by using pre-boot files. These are just text files that are passed as part of the ``spawn`` call and are written into the container immediately prior to boot. They are nothing more than renders of the application's configuration files - and as such can be created with anything that will render a template. Here is a simple implementation...::
+Thankfully there's a better way to effect a dynamic configuration and that's by using pre-boot files. These are just text files that are passed as part of the ``spawn`` call and are written into the container immediately prior to boot. Here is a simple implementation...::
 
     import signal
     from tfnz.location import Location
 
-    location = Location(debug_log=True)
+    location = Location(debug_log=False)
     preboot = {'/usr/share/nginx/html/index.html': 'Hello World!'}
     container = location.best_node().spawn('nginx', pre_boot_files=preboot)
     container.attach_browser()
     signal.pause()
 
-Obviously you are free to debug these renders client side, and in Python (instead of bash). Preboot files also make an excellent basis for higher level components i.e. a single 'LoadBalancer' class that uses pre-boot files as it's implementation.
-
-Launching Processes in Containers
-=================================
-
-"Container style" launch-at-boot of a single server process obviously doesn't cover all use cases so in 20ft it's possible to launch a process inside a pre-booted container. There can be multiple processes running concurrently and they can be run either synchronously to completion, or asynchronously with callbacks for the stdout stream and process termination. Some examples: Synchronously... ::
-
-    from tfnz.location import Location
-
-    location = Location(debug_log=False)
-    container = location.best_node().spawn('nginx')
-    container.wait_http_200()
-    data = container.spawn_process('ps faxu').wait_until_complete()
-    print(str(data, 'ascii'))
-
-Asynchronously... ::
-
-    import time
-    from tfnz.location import Location
-
-    def dc(obj, data):
-        print(str(data, 'ascii'), end='')
-
-    def tc(obj):
-        print("Vmstat terminated")
-
-    def sleep_tc(obj):
-        print("---Sleep terminated---")
-
-    location = Location(debug_log=False)
-    container = location.best_node().spawn('nginx')
-    vmstat = container.spawn_process('vmstat 1', data_callback=dc, termination_callback=tc)
-    sleep = container.spawn_process('sleep 3', termination_callback=sleep_tc)
-    time.sleep(10)
-    vmstat.destroy()  # just so we get the termination callback - would still garbage collect without it
-
-The concept of multiple processes in a single container can be implemented by starting the container 'asleep' then launching processes as and when you see fit. This is illustrated below... ::
-
-    import signal
-    from tfnz.location import Location
-
-    location = Location(debug_log=False)
-    container = location.best_node().spawn('nginx', sleep=True)
-    print(str(container.spawn_process('ps').wait_until_complete(), 'ascii'))
-    process = container.spawn_process('nginx')
-    container.wait_http_200()
-    print(str(container.spawn_process('ps').wait_until_complete(), 'ascii'))
-    signal.pause()
+Obviously this can be extended out to rendering /etc files; and you are able to debug these renders client side and in Python (instead of bash). Preboot files also make an excellent basis for higher level components i.e. a single 'LoadBalancer' class that uses pre-boot files as it's implementation.
 
 Concurrent Booting
 ==================

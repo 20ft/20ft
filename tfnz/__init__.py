@@ -62,6 +62,10 @@ class Waitable:
         if self.wait_lock.locked():
             self.wait_lock.release()
 
+    def mark_not_ready(self):
+        if not self.wait_lock.locked():
+            self.wait_lock.acquire()
+
 
 class Killable:
     """The concept of an object having been destroyed, killed, terminated or whatever"""
@@ -125,7 +129,9 @@ class KeyPair:
 
 
 def description(docker_image_id) -> dict:
-    # Get metadata from local Docker.
+    """Describe a docker image.
+
+    :return: A json representation of image metadata."""
     try:
         r = requests.get('%s/images/%s/json' % (docker_url_base, docker_image_id))
     except:
@@ -143,7 +149,9 @@ You need to run 'sudo chmod 666 /var/run/docker.sock'
 def last_image() -> str:
     """Finding the most recent docker image on this machine.
 
-       The intent is that last_image can be used as part of a development cycle (pass as image to spawn)."""
+    :return: id of the most recently built docker image
+
+    The intent is that last_image can be used as part of a development cycle (pass as image to spawn). """
     r = requests.get('%s/images/json' % docker_url_base)
     if len(r.text) == 0:
         raise ValueError("Docker has no local images.")
@@ -160,8 +168,14 @@ def uncaught_exception(exctype, value, tb):
 
 
 def get_external_ip() -> str:
+    """Finding the external IP for this machine/vm.
+
+    :return: The external IP for this machine.
+
+    This may not be an internet routable IP."""
     for interface in list(psutil.net_if_addrs().values()):
         for addr in interface:
+            # Allow inet4, not localhost and not a bridge
             if addr.family == socket.AddressFamily.AF_INET and \
                addr.address[:3] != '127' and addr.address[:6] != '172.17' is not None:
                 logging.info("Public bind IP: " + addr.address)
@@ -169,6 +183,11 @@ def get_external_ip() -> str:
 
 
 def find_unused_local_port() -> int:
+    """Find an unused local port number.
+
+    :return: An unused local port number between 1025 and 8192.
+
+    Port numbers are kept above 1024 so there is no need to run as root."""
     # find the used ports
     out = io.BytesIO(subprocess.check_output([netstat_bin, '-n', '-p', 'tcp'], stderr=subprocess.DEVNULL))
     out.readline()

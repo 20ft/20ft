@@ -101,7 +101,7 @@ class Location(Waitable):
         """Ranks the nodes in order of cpu or memory availability.
 
         :param bias_memory: prioritise memory availability over cpu.
-        :returns: a list of node objects.
+        :return: a list of node objects.
 
         Not a necessary step but useful if you wish to explicitly schedule containers on the same node.
         The output of best_node is affected by the cpu/memory bias.
@@ -117,7 +117,7 @@ class Location(Waitable):
     def best_node(self) -> Node:
         """Choose the currently best node to launch a container on.
 
-        :returns: a Node object or None.
+        :return: a Node object or None.
 
         Iterates over the list of nodes to aid with load balancing.
         For explicit control use ranked_nodes."""

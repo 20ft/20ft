@@ -68,7 +68,7 @@ class Container(Waitable, Killable):
         :param dest_port: The TCP port on the container to connect to.
         :param localport: Optional choice of local port no.
         :param bind: Optionally bind to an address other than localhost.
-        :returns: A Tunnel object.
+        :return: A Tunnel object.
 
         This call does no checking to ensure the server side is ready -
         but a failed connection will not destroy the tunnel itself and hence it can be used for polling.
@@ -83,7 +83,7 @@ class Container(Waitable, Killable):
         :param dest_port: Override the default destination port.
         :param fqdn: A host name to use in the http request.
         :param path: A path on the server - appended to /
-        :returns: A Tunnel object.
+        :return: A Tunnel object.
 
         Note that webservers running virtual hosts need to be connected to with a hostname - hence passing the fqdn.
         If you're testing a (for example) CMS and keep getting the default page, you probably need to set this.
@@ -99,7 +99,7 @@ class Container(Waitable, Killable):
         :param dest_port: Override the default port.
         :param fqdn: A host name to use in the http request.
         :param path: A path on the server - appended to /
-        :returns: A Tunnel object.
+        :return: A Tunnel object.
 
         Same notes as for 'attach_browser'."""
         self.ensure_alive()
@@ -222,7 +222,7 @@ class Container(Waitable, Killable):
     def fetch(self, filename: str) -> bytes:
         """Fetch a single file from the container.
 
-        :param: filename: The full-path name of the file to be retrieved.
+        :param filename: The full-path name of the file to be retrieved.
         :return: the contents of the file as a bytes object.
 
         Since the file gets loaded into memory, this is probably not the best way to move large files."""
@@ -236,8 +236,8 @@ class Container(Waitable, Killable):
     def put(self, filename: str, data: bytes):
         """Put a file into the container.
 
-        :param: filename: The full-path name of the file to be placed.
-        :param: data: The contents of the file as a bytes object.
+        :param filename: The full-path name of the file to be placed.
+        :param data: The contents of the file as a bytes object.
 
         This will just overwrite so be careful. Note that new file paths are created on demand.
         """
@@ -248,23 +248,23 @@ class Container(Waitable, Killable):
                                        'container': self.uuid,
                                        'filename': filename}, bulk=data)
 
-    def logs(self) -> [dict]:
-        """Fetches the stdout log from the container.
+    def restart(self, reset_filesystem=False):
+        """Synchronously restart a container, optionally resetting the filesystem.
 
-        :return: A list of dictionary objects.
+        :param reset_filesystem: Reset the container's filesystem to it's 'as booted' state."""
+        if self.dead:
+            raise RuntimeError("Tried to restart a container but it has already been removed from the node")
+        self.wait_until_ready()  # in this case means it has been configured, prepared etc. once already
 
-        The dictionary keys are:
-
-        * log - a single log item.
-        * stream - the stream it was received on.
-        * time - the server timestamp when the message was logged."""
-        self.ensure_alive()
+        # Restart
+        self.mark_not_ready()  # so calls are forced to wait until the container reports it has rebooted
+        self.conn().send_cmd('restart_container',
+                             {'node': self.parent().pk,
+                              'container': self.uuid,
+                              'reset_filesystem': reset_filesystem},
+                             reply_callback=self.parent().container_status_update)
+        logging.info("Restarting container: " + self.uuid)
         self.wait_until_ready()
-        raw = self.conn().send_blocking_cmd('fetch_log',
-                                           {'node': self.parent().pk,
-                                            'container': self.uuid}).bulk
-        lines = str(raw, 'utf-8').split('\n')
-        return [json.loads(line) for line in lines if line != '']
 
     def _process_callback(self, msg):
         if self.bail_if_dead():

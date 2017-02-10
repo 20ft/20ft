@@ -32,6 +32,18 @@ Process
 ..  autoclass:: tfnz.process.Process
     :members:
 
+Helpers
+=======
+
+..  autofunction:: tfnz.description
+
+..  autofunction:: tfnz.last_image
+
+..  autofunction:: tfnz.get_external_ip
+
+..  autofunction:: tfnz.find_unused_local_port
+
+
 
 Known Problems
 ==============

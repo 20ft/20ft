@@ -9,6 +9,7 @@ from unittest import TestCase, main
 import subprocess
 import json
 import time
+import requests
 from tfnz.location import Location
 from tfnz.container import Container
 from tfnz import description
@@ -77,6 +78,27 @@ class TfTest(TestCase):
         container = TfTest.location.best_node().spawn(TfTest.image, pre_boot_files=preboot, no_image_check=True)
         self.assertTrue(b'Hello World!' in container.fetch('/usr/share/nginx/html/index.html'))
 
+    def test_reset(self):
+        # create a container with some preboot files
+        preboot = {'/usr/share/nginx/html/index.html': 'Hello World!'}
+        container = TfTest.location.best_node().spawn('nginx', pre_boot_files=preboot)
+        tnl = container.wait_http_200()
+
+        # Is it serving the correct file?
+        resp = requests.get("http://127.0.0.1:" + str(tnl.localport()))
+        self.assertTrue(resp.text == 'Hello World!', "Preboot file apparently not written in")
+
+        # Broken?
+        container.put('/usr/share/nginx/html/index.html', b'Smeg')
+        resp = requests.get("http://127.0.0.1:" + str(tnl.localport()))
+        self.assertTrue(resp.text == 'Smeg', "Didn't manage to replace preboot file")
+
+        # Reset should take it to after the preboot files and not just the container image
+        container.restart(reset_filesystem=True)
+        tnl2 = container.wait_http_200()
+        resp = requests.get("http://127.0.0.1:" + str(tnl2.localport()))
+        self.assertTrue(resp.text == 'Hello World!', "Filesystem did not recover")
+
     def test_firewalling(self):
         # can we connect one container to another?
         server = TfTest.location.best_node().spawn(TfTest.image, no_image_check=True)
@@ -99,8 +121,7 @@ class TfTest(TestCase):
         self.assertTrue("timed out" in reply, 'Did not manage to disconnect containers')
 
     def test_state_tracking(self):
-        # TODO: WTF, this test passes every time when run on it's own
-        loc = Location()
+        loc = Location(debug_log=True, location_ip="t1700.local")
         node = loc.best_node()
 
         # containers
@@ -169,7 +190,7 @@ class TfTest(TestCase):
 
     def test_multiple_connect(self):
         # should be banned by the geneva convention
-        locs = [Location() for n in range(0, 5)]
+        locs = [Location(debug_log=True, location_ip="t1700.local") for n in range(0, 5)]
         nodes = [loc.best_node() for loc in locs]
         containers = [node.spawn(TfTest.image, no_image_check=True) for node in nodes]
         self.assertTrue(True)
@@ -196,14 +217,14 @@ class TfTest(TestCase):
 
         # a non-existent file
         try:
-            print(container.fetch('nothere'))
+            container.fetch('nothere')
             self.assertTrue(False, 'Trying to fetch a non-existent file did not throw an excepton')
         except ValueError:
             self.assertTrue(True)
 
         # exists but is a directory
         try:
-            print(container.fetch('/usr'))
+            container.fetch('/usr')
             self.assertTrue(False, 'Trying to fetch a directory did not throw an excepton')
         except ValueError as e:
             self.assertTrue(True)
@@ -219,9 +240,13 @@ class TfTest(TestCase):
 
     def test_callbacks(self):
         self.test_data = b''
+        self.drop_first = True
         self.terminated_process = None
 
         def test_data_callback(obj, data):
+            if self.drop_first:
+                self.drop_first = False
+                return
             self.test_data += data
 
         def test_termination_callback(obj):
@@ -243,7 +268,7 @@ class TfTest(TestCase):
         time.sleep(2.5)
         snapshot = bytes(self.test_data)
         lines = snapshot.count(b'\n')
-        self.assertTrue(lines == 6, 'Data callbacks not working')  # six lines of output
+        self.assertTrue(lines == 3, 'Data callbacks not working')  # six lines of output
 
         # destroys
         container.destroy_process(long_process)
@@ -256,7 +281,7 @@ class TfTest(TestCase):
         shell = container.spawn_shell(data_callback=test_data_callback,
                                       termination_callback=test_termination_callback)
         shell.stdin(b'ps faxu\n')
-        time.sleep(1)
+        time.sleep(5)
         container.destroy_process(shell)
         self.assertTrue(b'BrandZ' in self.test_data and b'Linux' in self.test_data, "Did not apparently shell in")
         self.assertTrue(self.terminated_process is shell, 'Shell did not call termination callback')
@@ -305,11 +330,6 @@ class TfTest(TestCase):
             self.assertTrue(False, 'Running curl against the tunnel threw an exception: ' + str(e))
         self.assertTrue(TfTest.root_reply_contains.encode() in reply, 'Did not get the expected reply from container')
 
-        # seeing if it was logged
-        logs = container.logs()
-        self.assertTrue(len(logs) != 0, 'Container logs were blank')
-        self.assertTrue('curl/' in logs[len(logs)-1]['log'], 'The request from curl didn\'t show up in server logs')
-
     def test_contain_loop(self):
         bad_container, good_container = self._two_containers()
 
@@ -320,6 +340,7 @@ class TfTest(TestCase):
         time.sleep(10)
         ps_result = good_container.spawn_process('ps ax').wait_until_complete()
         self.assertTrue(TfTest.launched_process in ps_result.decode('ascii'))
+        self._destroy_two_containers(bad_container, good_container)
 
     def test_contain_cat(self):
         bad_container, good_container = self._two_containers()
@@ -332,6 +353,7 @@ class TfTest(TestCase):
         ps_result = good_container.spawn_process('ps ax').wait_until_complete()
         self.assertTrue(TfTest.launched_process in ps_result.decode('ascii'))
         bad_container.spawn_process('rm zeroes*')
+        self._destroy_two_containers(bad_container, good_container)
 
     def test_contain_fork_bomb(self):
         bad_container, good_container = self._two_containers()
@@ -341,13 +363,18 @@ class TfTest(TestCase):
         time.sleep(10)
         ps_result = good_container.spawn_process('ps ax').wait_until_complete()
         self.assertTrue(TfTest.launched_process in ps_result.decode('ascii'))
+        self._destroy_two_containers(bad_container, good_container)
 
     def _two_containers(self):
-        node = TfTest.location.best_node()
+        node = TfTest.location.ranked_nodes()[0]
         bad_container = node.spawn(TfTest.image, no_image_check=True)
         good_container = node.spawn(TfTest.image, no_image_check=True)
         return bad_container, good_container
 
+    def _destroy_two_containers(self, bad_container, good_container):
+        node = TfTest.location.ranked_nodes()[0]
+        node.destroy_container(bad_container)
+        node.destroy_container(good_container)
 
 if __name__ == '__main__':
     main()
