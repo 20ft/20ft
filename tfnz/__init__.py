@@ -13,50 +13,38 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 """
 
 import logging
-import sys
-import traceback
-import io
-import random
-import socket
-import subprocess
-import requests
-import json
-import psutil
-import os
-from base64 import b64encode, b64decode
-from libnacl.public import SecretKey
+import re
+import weakref
 from _thread import allocate_lock
-
-docker_url_base = 'http+unix://%2Fvar%2Frun%2Fdocker.sock'
-docker_bin = None
-netstat_bin = None
-
-try:
-    docker_bin = subprocess.check_output(['which', 'docker']).decode().rstrip('\r\n')
-except subprocess.CalledProcessError:
-    pass
-
-try:
-    netstat_bin = subprocess.check_output(['which', 'netstat']).decode().rstrip('\r\n')
-except subprocess.CalledProcessError:
-    pass
+from threading import Thread
+from bottle import run, Bottle
+from sys import exit
+from base64 import b64encode
 
 
 class Waitable:
-    """Wait for an object to be ready with wait_until_ready"""
-    def __init__(self):
+    """An object that can be waited on (until marked as ready)"""
+    def __init__(self, locked=True):
         self.wait_lock = allocate_lock()
-        self.wait_lock.acquire()
+        self.exception = None
+        if locked:
+            self.wait_lock.acquire()
 
     def __del__(self):
         if self.wait_lock.locked():
             self.wait_lock.release()
 
-    def wait_until_ready(self):
+    def wait_until_ready(self, timeout=30):
+        """Blocks waiting for a (normally asynchronous) update indicating the object is ready.
+
+        Note this also causes exceptions that would previously have been raised on the background thread
+        to be raise on the calling (i.e. main) thread."""
         # this lock is used for waiting on while uploading layers, needs to be long
-        result = self.wait_lock.acquire(timeout=120)
+        self.wait_lock.acquire(timeout=timeout)
         self.wait_lock.release()
-        return result
+        if self.exception:
+            raise self.exception
+        return self
 
     def mark_as_ready(self):
         if self.wait_lock.locked():
@@ -66,9 +54,14 @@ class Waitable:
         if not self.wait_lock.locked():
             self.wait_lock.acquire()
 
+    def unblock_and_raise(self, exception):
+        # releases the lock but causes the thread in 'wait_until_ready' to raise an exception
+        self.exception = exception
+        self.mark_as_ready()
+
 
 class Killable:
-    """The concept of an object having been destroyed, killed, terminated or whatever"""
+    """An object that can be marked as dead - and either bail and carry on, or raise if dead"""
     def __init__(self):
         self.dead = False
 
@@ -87,127 +80,155 @@ class Killable:
             raise ValueError("Cannot call method on a terminated object: " + self.__repr__())
 
 
-class KeyPair:
-    """Holds a public/secret key pair as base 64 - bytes not strings"""
+class Taggable:
+    """A resource that has a tag"""
+    tag_re = re.compile('[^0-9a-z\-_.]')
 
-    def __init__(self, name=None, prefix='~/.20ft'):
-        self.public = None
-        self.secret = None
-        if name is None:
-            return
-
-        # we are also fetching the keys
-        expand = os.path.expanduser(prefix)
-        try:
-            with open(expand + '/' + name + ".pub", 'rb') as f:
-                self.public = f.read()[:-1]
-        except FileNotFoundError:
-            raise RuntimeError("No public key found, halting")
-        try:
-            with open(expand + '/' + name, 'rb') as f:
-                self.secret = f.read()[:-1]
-        except FileNotFoundError:
-            raise RuntimeError("No private key found, halting")
-
-    def public_binary(self):
-        return b64decode(self.public)
-
-    def secret_binary(self):
-        return b64decode(self.secret)
+    def __init__(self, uuid, tag=None, user=None):
+        self.uuid = uuid
+        self.tag = tag
+        self.user = user
 
     @staticmethod
-    def new():
-        """Create a new random key pair"""
-        keys = SecretKey()
-        rtn = KeyPair()
-        rtn.public = b64encode(keys.pk)
-        rtn.secret = b64encode(keys.sk)
-        return rtn
+    def ok_tag(tag):
+        if tag is None:
+            return None
+        tag = tag.lower()
+        if Taggable.tag_re.search(tag) is not None:
+            raise ValueError("Tag names can only use 0-9 a-z - _ and .")
+        return tag
+
+    def display_name(self):
+        return self.uuid.decode() if self.tag is None else (self.uuid.decode() + ':' + self.tag)
+
+    def user_tag(self):
+        return Taggable.create_user_tag(self.user, self.tag)
+
+    @staticmethod
+    def create_user_tag(user, tag):
+        if tag is None:
+            return None
+        return b64encode(user).decode() + tag if user is not None else tag
+
+
+class Connectable:
+    """A resource that can be connected to in the private IP space"""
+    def __init__(self, conn, uuid, node, ip):
+        self.conn = weakref.ref(conn)
+        self.uuid = uuid
+        self.node_pk = node if isinstance(node, bytes) else node.pk
+        self.ip = ip
+
+    def allow_connection_from(self, obj):
+        self.conn().send_blocking_cmd(b'allow_connection', {'node': self.node_pk,
+                                                            'container': self.uuid,
+                                                            'ip': obj.ip})
+        logging.info("Allowed connection (from %s) on: %s" % (str(obj.uuid), str(self.uuid)))
+
+    def disallow_connection_from(self, obj):
+        self.conn().send_cmd(b'disallow_connection', {'node': self.node_pk,
+                                                      'container': self.uuid,
+                                                      'ip': obj.ip})
+        logging.info("Disallowed connection (from %s) on: %s" % (str(obj.uuid), str(self.uuid)))
+
+
+class TaggedCollection:
+    """A collection of tagged objects - plus tag management code"""
+    def __init__(self, objects: list=None):
+        """pass a uuid->object map of Taggable objects"""
+        self.objects = {}
+        if objects is None:
+            return
+        for obj in objects:
+            self.add(obj)
+
+    def __contains__(self, uuid):
+        return uuid in self.objects
+
+    def __getitem__(self, item):
+        return self.objects[item]
+
+    def get(self, key, user=None):
+        """Fetches using a tag, uuid or display name to an object"""
+        if isinstance(key, bytes):
+            key = key.decode()  # passing a pure uuid will arrive as bytes
+        if ':' in key:
+            uuid, key = key.split(':')
+        else:
+            uuid = key
+        uuid = uuid.encode()  # uuid's are always stored as binary
+        try:  # try just the uuid
+            return self.objects[uuid]
+        except KeyError:
+            # try just the tag
+            ut = Taggable.create_user_tag(user, key)
+            return self.objects[ut]
+
+    def __len__(self):
+        return len(self.values())
+
+    def add(self, obj: Taggable):
+        self.raise_for_clash(obj)
+        self.objects[obj.uuid] = obj
+        if obj.tag is not None:
+            self.objects[obj.user_tag()] = obj
+
+    def remove(self, obj: Taggable):
+        del self.objects[obj.uuid]
+        if obj.user_tag() in self.objects:
+            del self.objects[obj.user_tag()]
+
+    def clear(self):
+        self.objects.clear()
+
+    def raise_for_clash(self, obj):
+        ut = obj.user_tag()
+        if ut in self.objects:
+            raise ValueError("Tag is already being used")
+
+    def raise_if_will_clash(self, user, tag):
+        if tag is None:
+            return
+        ut = Taggable.create_user_tag(user, tag)
+        if ut in self.objects:
+            raise ValueError("Tag is already being used")
+
+    def keys(self):
+        return self.objects.keys()
+
+    def values(self):
+        return set(self.objects.values())  # de-dupe
+
+    def items(self):
+        return self.objects.items()
+
+
+inspection_server = Bottle()
+
+
+class InspectionServer(Thread):
+    """A thread for running an inspection server."""
+    parent = None  # done as a class variable because the route method needs to be static
+    port = None
+
+    def __init__(self, parent, port):
+        super().__init__(target=self.serve, name=str("Inspection server"), daemon=True)
+        InspectionServer.parent = weakref.ref(parent)
+        InspectionServer.port = port
+        self.start()
+
+    @staticmethod
+    def serve():
+        try:
+            logging.info("Started inspection server: 0.0.0.0:" + str(InspectionServer.port))
+            run(app=inspection_server, host='0.0.0.0', port=InspectionServer.port, quiet=True)
+        except OSError:
+            logging.critical("Could not bind inspection server, exiting")
+            exit(1)
+
+    @staticmethod
+    def stop():
+        inspection_server.close()
 
     def __repr__(self):
-        return "<tfnz.keys.Keys object at %x (pk=%s)>" % (id(self), self.public)
-
-
-def description(docker_image_id) -> dict:
-    """Describe a docker image.
-
-    :return: A json representation of image metadata."""
-    try:
-        r = requests.get('%s/images/%s/json' % (docker_url_base, docker_image_id))
-    except:
-        raise RuntimeError("""Cannot connect to the docker socket.
------------------------------------------------------
-You need to run 'sudo chmod 666 /var/run/docker.sock'
------------------------------------------------------""")
-    obj = json.loads(r.text)
-    if 'message' in obj:
-        if obj['message'][0:14] == "No such image:":
-            raise ValueError("Image not in local docker: " + docker_image_id)
-    return obj
-
-
-def last_image() -> str:
-    """Finding the most recent docker image on this machine.
-
-    :return: id of the most recently built docker image
-
-    The intent is that last_image can be used as part of a development cycle (pass as image to spawn). """
-    r = requests.get('%s/images/json' % docker_url_base)
-    if len(r.text) == 0:
-        raise ValueError("Docker has no local images.")
-    obj = json.loads(r.text)
-    return obj[0]['Id'][7:19]
-
-
-def uncaught_exception(exctype, value, tb):
-    if exctype is KeyboardInterrupt:
-        logging.info("Caught Ctrl-C, closing")  # clearing server side objects done by server
-        exit(0)
-    traceback.print_exception(exctype, value, tb)
-    exit(1)
-
-
-def get_external_ip() -> str:
-    """Finding the external IP for this machine/vm.
-
-    :return: The external IP for this machine.
-
-    This may not be an internet routable IP."""
-    for interface in list(psutil.net_if_addrs().values()):
-        for addr in interface:
-            # Allow inet4, not localhost and not a bridge
-            if addr.family == socket.AddressFamily.AF_INET and \
-               addr.address[:3] != '127' and addr.address[:6] != '172.17' is not None:
-                logging.info("Public bind IP: " + addr.address)
-                return addr.address
-
-
-def find_unused_local_port() -> int:
-    """Find an unused local port number.
-
-    :return: An unused local port number between 1025 and 8192.
-
-    Port numbers are kept above 1024 so there is no need to run as root."""
-    # find the used ports
-    out = io.BytesIO(subprocess.check_output([netstat_bin, '-n', '-p', 'tcp'], stderr=subprocess.DEVNULL))
-    out.readline()
-    out.readline()
-    ports = set()
-    for line in out:
-        try:
-            props = line.split()
-            ip_bits = props[3].decode().split('.')
-            if len(ip_bits) != 5:
-                continue  # an ip6 address
-            ports.add(ip_bits[4])
-        except:
-            raise RuntimeError("Failed trying to find an open local port")
-
-    # keep guessing until we get an empty one
-    while True:
-        candidate = random.randrange(1025, 8192)
-        if candidate not in ports:
-            return candidate
-
-
-sys.excepthook = uncaught_exception
+        return "<tfnz.InspectionServer object at %x>" % id(self)

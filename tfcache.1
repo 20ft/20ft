@@ -1,0 +1,27 @@
+.TH TFCACHE(1)
+.SH NAME
+tfcache - ensure an image is in the 20ft image cache
+.SH SYNOPSIS
+.B tfcache
+[\fB\-h\fR]
+[\fB\-\-location \fIx.20ft.nz\fR]
+[\fB\-\-local \fIy.local\fR]
+\fBimage\fR
+
+.SH DESCRIPTION
+.B tfcache
+Ensures the given image UUID or tag is in the 20ft image cache.
+
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Present cli help.
+.TP
+.BR \-\-location\ x\.20ft\.nz
+Use an (optional) non-default location (fqdn)
+.TP
+.BR \-\-local\ y.local
+An optional (local) ip for the broker
+.TP
+.BR image
+The UUID or tag to upload

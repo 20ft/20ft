@@ -12,34 +12,21 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 """
 
-from subprocess import Popen, PIPE
 import hashlib
 import logging
 import io
-from tarfile import TarFile
-from . import description, docker_bin
+import lzma
+from tarfile import TarFile, ReadError
+from .docker import Docker
 
 
 class Sender:
 
-    def __init__(self, conn, docker_image_id):
-        """Internal use: Fetch and send docker layers."""
-        self.conn = conn
-        self.docker_image_id = docker_image_id
-
-        # get unique sha256's that need uploading (layer_stack throws for an invalid id)
-        offers = set(Sender.layer_stack(docker_image_id))
-
-        # set the list of required uploads
-        self.requirements = conn.send_blocking_cmd('upload_requirements', list(offers)).params
-        self.req_to_go = len(self.requirements)
-
     @staticmethod
-    def layer_stack(docker_image_id):
+    def layer_stack(descr):
         """Returns a list of the layers necessary to create the passed docker image id."""
         # find layers
-        desc = description(docker_image_id)  # get dictionary (throws for invalid id)
-        layers = desc['RootFS']['Layers']
+        layers = descr['RootFS']['Layers']
 
         # take the layers and prevent the same layer being applied twice in a row
         single_run_layers = []
@@ -52,25 +39,32 @@ class Sender:
             last_layer = layer
         return single_run_layers
 
-    def send(self):
+    @staticmethod
+    def upload_requirements(layers, conn):
+        # ask the location what it needs
+        return conn.send_blocking_cmd(b'upload_requirements', {'layers': layers}).params
+
+    @staticmethod
+    def send(docker_image_id, layers, conn):
         """Internal use: Send the missing layers to the location."""
-        if len(self.requirements) == 0:
-            logging.info("No layers need uploading for: " + self.docker_image_id)
+        if len(layers) == 0:
+            logging.info("No layers need uploading for: " + docker_image_id)
             return
 
         # get docker to export *all* the layers (not like we have a choice, would be happy to be informed otherwise)
         # note that making a fake registry was tried and found to be horrible
-        if docker_bin is None:
-            raise RuntimeError("Could not find local docker")
-        logging.info("Getting docker to export layers...")
-        process = Popen([docker_bin, 'save', self.docker_image_id], stdout=PIPE)
-        (docker_stdout, docker_stderr) = process.communicate()
-        raw_top_tar = io.BytesIO(docker_stdout)
-        top_tar = TarFile(fileobj=raw_top_tar)
+        logging.info("Waiting for Docker to export image...")
+        tarball = Docker.tarball(docker_image_id)
+        try:
+            raw_top_tar = io.BytesIO(tarball)
+            top_tar = TarFile(fileobj=raw_top_tar)
+        except ReadError:
+            raise RuntimeError("Local docker does not appear to have image: " + docker_image_id)
 
         # sha256 and send until all our requirements are met
         for member in top_tar.getmembers():
             # only even remotely interested in the layers
+            logging.debug("Examining: " + str(member))
             if '/layer.tar' not in str(member):
                 continue
 
@@ -79,12 +73,27 @@ class Sender:
             sha256 = hashlib.sha256(layer_data).hexdigest()
 
             # is this one we care about?
-            if sha256 in self.requirements:
-                logging.info("Background uploading: " + sha256)
-                self.conn.send_cmd('upload', {'sha256': sha256}, bulk=layer_data)
-                self.req_to_go -= 1
-                if self.req_to_go == 0:  # done
-                    break
+            if sha256 in layers:
+                logging.info("Uploading: " + sha256[:16])
 
-    def __repr__(self):
-        return "<tfnz.send.Sender object at %x (%s)>" % (id(self), self.docker_image_id)
+                # send in compressed 4MB chunks
+                slab_size = 4*1024*1024
+                data_loc = 0
+                slab = 0
+                data_length = len(layer_data)
+                logging.info("Uploading slabs: " + str((data_length // slab_size) + 1))
+                while data_loc < data_length:
+                    end_byte = (slab+1) * slab_size
+                    if end_byte >= len(layer_data):
+                        end_byte = len(layer_data)
+                    send_data = lzma.compress(layer_data[data_loc:end_byte], preset=1)
+                    conn.send_cmd(b'upload_slab', {'sha256': sha256, 'slab': slab}, bulk=send_data)
+                    data_loc += slab_size
+                    slab += 1
+                    logging.info("Sending slab: " + str(slab))
+
+                # this is the end
+                # the upload_complete call can take ages to happen because it'll be behind all the slabs
+                msg = conn.send_blocking_cmd(b'upload_complete', {'sha256': sha256, 'slabs': slab}, timeout=300)
+                logging.info(msg.params['log'])
+

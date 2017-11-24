@@ -14,6 +14,12 @@ Node
 ..  autoclass:: tfnz.node.Node
     :members:
 
+Volume
+======
+
+..  autoclass:: tfnz.volume.Volume
+    :members:
+
 Container
 =========
 
@@ -35,21 +41,8 @@ Process
 Helpers
 =======
 
-..  autofunction:: tfnz.description
+..  autoclass:: tfnz.Waitable
+    :members:
 
-..  autofunction:: tfnz.last_image
-
-..  autofunction:: tfnz.get_external_ip
-
-..  autofunction:: tfnz.find_unused_local_port
-
-
-
-Known Problems
-==============
-
-Unfortunately there are still some small incompatibilities between container infrastructures. Neither of these two fixes is unique to 20ft...
-
-**Apache 2** needs ``AcceptFilter http none`` somewhere in it's configuration.
-
-**PostgreSQL** needs ``dynamic_shared_memory_type = none`` in postgresql.conf.
+..  autoclass:: tfnz.Killable
+    :members:

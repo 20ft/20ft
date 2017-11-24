@@ -1,0 +1,34 @@
+.TH TFVOLUMES(1)
+.SH NAME
+tfvolumes - administer data volumes for 20ft
+.SH SYNOPSIS
+.B tfvolumes
+[\fB\-h\fR]
+[\fB\-\-location \fIx.20ft.nz\fR]
+[\fB\-\-local \fIy.local\fR]
+         \fBlist\fR
+         \fBcreate [tag]\fR
+         \fBdestroy (uuid | tag | tag:uuid)\fR
+
+.SH DESCRIPTION
+.B tfvolumes
+administers volumes in a 20ft location. 'list' and 'create' return their results as json. Destroy is silent but returns code 1 if the volume can't be found.
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Present cli help.
+.TP
+.BR \-\-location\ x\.20ft\.nz
+Use an (optional) non-default location (fqdn).
+.TP
+.BR \-\-local\ y.local
+An optional (local) ip for the broker.
+.TP
+.BR list
+Return a list of volumes available in this location.
+.TP
+.BR create [tag]
+Create a volume (optionally creating with a tag).
+.TP
+.BR destroy (uuid | tag | tag:uuid)
+Destroy a volume given its uuid, tag, or both.

@@ -4,102 +4,112 @@ tf - launch a container on 20ft.nz
 .SH SYNOPSIS
 .B tf
 [\fB\-h\fR]
-[\fB\-v\fR]
-[\fB\-\-loc \fIxxx.20ft.nz\fR]
-[\fB\-\-local_broker \fIyyy.local\fR]
-[\fB\-\-public\fR]
-[\fB\-\-offset \f+n\fR]
-[\fB\-\-json \fIfilename\fR]
-[\fB\-\-browser\fR
-[\fB\-\-domain \fIhost.name\fR]
-[\fB\-\-path \fI/where/ever\fR]]
-\fB\fIimage\fR
-[\fB\fIENVIRONMENT=\fIvalue \fR[\fB\fIENVIRONMENT=VALUE \fR...]]
+[\fB\-\-location \fIx.20ft.nz\fR]
+[\fB\-\-local \fIy.local\fR]
+
+[[\fB\-e\fR \fIENV=value\fR] ... ]
+[[\fB\-f\fR \fIsrc:dest\fR] ... ]
+[[\fB\-m\fR \fIuuid:/mount/point\fR] ... ]
+
+[[\fB\-p\fR \fIlocal:remote\fR] ... ]
+[[\fB\-r\fR \fIremote:local\fR] ... ]
+
+[\fB\-c\fR \fIscript.sh\fR | \fB\-z\fR]
+[\fB\-w\fR \fI[subdomain.]wip.my.com[:www.my.com[:certname]]\fR]
+
+[\fB\-\-ssh port\fR | \fB\-s\fR]
+[\fB\-v\fR | \fB\-q\fR]
+[\fB\-i\fR]
+
+
+\fBsource\fR
+[\fBargs ... \fR]
+
 .SH DESCRIPTION
 .B tf
-Launches containers on 20ft.nz, passes the environment variables and creates localhost tunnels to ports 'exposed' within the Docker config. Use \fB\-\-loc\fR to specify a non-default location and \fB\-\-local_broker\fR to specify a connection ip other than that obtained by a dns lookup.
+launches containers or scripts on 20ft.nz: passes environment variables, copies pre-boot files, mounts persistent volumes, port maps onto the container and selects a starting command; creates an ssh/sftp server, and changes log verbosity.
 
-Find localhost addresses using the \fB\-\-json\fR file or directly attach a browser with \fB\-\-browser\fR with an optional hostname sent as the HTTP Host header. Note that for the browser to attach the hostname needs to resolve to 127.0.0.1 - tf will help you do this if necessary..
+If the source name is a file (with the .py extension) that implements tf_exec in Python, the function is called.
 
-Using . as the image name launches this machine's most recently built docker image.
+   \fBdef tf_exec(location, node, environment, portmap, preboot, volumes, args):\fR
+
+Otherwise the source is assumed to be a docker id in either the 'hex' or 'name' form; or '.' implies the most recently added image in the local docker daemon.
+
 .SH OPTIONS
 .TP
 .BR \-h ", " \-\-help
 Present cli help.
 .TP
+.BR \-\-location\ x\.20ft\.nz
+Use an (optional) non-default location (fqdn).
+.TP
+.BR \-\-local\ y.local
+An optional (local) ip for the broker.
+
+.TP
+.BR \-e\ ENV=value
+Add an environment variable to the launch context.
+.TP
+.BR \-f\ src:dest
+Before boot copy the source file into the destination directory.
+.TP
+.BR \-m\ uuid:/mount/point
+Mount the volume 'uuid' at the given mount point.
+.TP
+.BR \-p\ localport:remoteport
+Create a TCP tunnel between localhost and the container.
+.TP
+.BR \-p\ remoteport:localport
+Create a single use TCP tunnel between the container and localhost (an aid for debugging, not for production).
+.TP
+.BR \-c
+Choose an alternate entrypoint.
+.TP
+.BR \-w\ [subdomain.]wip.my.com[:www.my.com[:certname]]
+Publish port 80 of the container to a web endpoint. Publishing to a subdomain is enabled by creating a wildcard DNS entry (i.e. *.wip). Applications which expect a given 'Host' header can have this set with the rewrite (second) option. To host behind ssl pass a certificate name where tf will look for certname.crt and certname.key. Intermediate certs will need to be cat'ed onto the end of the main certificate.
+
+.TP
+.BR \-\-ssh\ port
+Launch the container, then start a shell and wrap it with an ssh session on the specified port (pass:root, blank password).
+.TP
+.BR \-s
+Short for "--ssh 2222"
+.TP
+.BR \-z
+Launch the container but don't run the entrypoint or command (runs 'sleep').
+.TP
+.BR \-i
+Run interactively (connects stdin and stdout).
+
+.TP
 .BR \-v
-Increase verbosity (up to 2)
+Verbose logging (level DEBUG).
 .TP
-.BR \-\-loc\ xxx\.20ft\.nz
-Use an (optional) non-default location (fqdn)
-.TP
-.BR \-\-local_broker\ yyy.local
-An optional (local) ip for the broker
-.TP
-.BR \-\-public
-Binds to the lan-external address instead of localhost
-.TP
-.BR \-\-offset\ +n
-An offset to apply to container exposed ports to create the local port
-.TP
-.BR \-\-json\ filename
-Writes a file describing state (deleted on exit)
-.TP
-.BR \-\-browser\ host.name
-Create web browser onto container port 80
-.TP
-.BR \-\-domain\ some.domain
-Pass to replace 'localhost' in the http server-name directive
-.TP
-.BR \-\-path\ /where/ever
-The initial path to request from the webserver.
-.SH EXIT CODES
-tf will also write a verbose explanation to stderr:
-.TP
-.BR 3
-Environment variables malformed
-.TP
-.BR 4
-An attempt has been made to instantiate two instances referencing the same json file
-.TP
-.BR 5
-There was a failure while connecting to the location
-.TP
-.BR 6
-There was a failure selecting a node
-.TP
-.BR 7
-There was a failure while spawning a container
-.TP
-.BR 8
-Attempted to use a domain that does not resolve to localhost
-.TP
-.BR 9
-There was a failure while writing the json file (permissions?)
-.TP
-.BR 9
-Provided offset was not an integer
+.BR \-q
+Logging is not configured.
+
 .SH EXAMPLES
-Launch the most recently built Docker image and attach a browser.
 .PP
-.nf
+Launch the most recently built Docker image and map local port 8080 to remote port 80.
+.PP
 .RS
-tf --browser www.example.host .
+tf -p 8080:80 .
 .RE
-.fi
 .PP
-Launch nginx container, externally accessible, port 8080 mapped to 80 on the container, and with an environment variable set.
+Launch the stock nginx image mapping port 8080 to 80, with a pre-existing volume for the http content and the ability to ssh/sftp into the container.
 .PP
-.nf
 .RS
-tf --public --offset 8000 nginx DOMAIN=test.org
+tf -p 8080:80 -m UUID1234:/usr/share/nginx/html nginx
 .RE
-.fi
 .PP
-Create from local ID dcff15633c66, report state as json file.
+Run a script passing "prod" as an argument.
 .PP
-.nf
 .RS
-tf --local_ip broker.local --json js_filename dcff15633c66
+tf our_script prod
 .RE
-.fi
+.PP
+Run a script passing "--prod" as an argument.
+.PP
+.RS
+tf our_script -- --prod
+.RE

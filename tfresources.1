@@ -1,0 +1,23 @@
+.TH TFRESOURCES(1)
+.SH NAME
+tfresources - view available resources
+.SH SYNOPSIS
+.B tfresources
+[\fB\-h\fR]
+[\fB\-\-location \fIx.20ft.nz\fR]
+[\fB\-\-local \fIy.local\fR]
+
+.SH DESCRIPTION
+.B tfresources
+emits a json object describing the resources available to your account when connecting to 20ft. Note that this is not a generalised "show status" and, as such, other sessions and their state will not be described.
+
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Present cli help.
+.TP
+.BR \-\-location\ x\.20ft\.nz
+Use an (optional) non-default location (fqdn)
+.TP
+.BR \-\-local\ y.local
+An optional (local) ip for the broker

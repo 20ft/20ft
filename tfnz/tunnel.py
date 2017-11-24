@@ -20,30 +20,38 @@ import logging
 import socket
 import time
 import shortuuid
-from . import Waitable, Killable
+from . import Killable
 
 
-class Tunnel(Waitable, Killable):
+class Tunnel(Killable):
     """An object representing a TCP proxy from localhost onto a container.
     Do not instantiate directly, use location.tunnel_onto or location.wait_http_200.
 
     Interact with the proxy through TCP (or call localport if you didn't set it explicitly).
     Note that apparently plaintext traffic through the tunnel is still encrypted on the wire."""
 
-    def __init__(self, connection, node, container, port, localport, bind):
-        Waitable.__init__(self)
-        Killable.__init__(self)
+    def __init__(self, connection, node, container, port, lp=None, bind=None):
+        super().__init__()
         # tell the location what we want
-        self.uuid = shortuuid.uuid()
+        self.uuid = shortuuid.uuid().encode()
+        self.sess = connection.rid
         self.node = node
         self.connection = connection
         self.socket = None
         self.container = container
         self.port = port
-        self.lp = localport
+        self.lp = lp
         self.bind = bind
         self.fd = None
         self.proxies = {}
+        connection.register_connect_callback(self.session_reconnected)
+
+    def __del__(self):
+        self.internal_destroy()  # bails if destroyed already
+
+    def session_reconnected(self, rid):
+        logging.debug("Tunnel reset its session id: " + str(self.uuid))
+        self.sess = rid
 
     def connect(self):
         self.ensure_alive()
@@ -52,32 +60,24 @@ class Tunnel(Waitable, Killable):
         self.socket.setblocking(False)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            self.socket.bind(("127.0.0.1" if self.bind is None else self.bind, self.lp))
+            self.socket.bind(('0.0.0.0' if self.bind is None else self.bind, 0 if self.lp is None else self.lp))
+            self.lp = self.socket.getsockname()[1]
         except OSError:
             pass
         self.socket.listen()
         self.fd = self.socket.fileno()
-        self.connection.loop.register_fd_socket(self.fd, self.event)
+        self.connection.loop.register_exclusive(self.fd, self.event, comment="listener for " + str(self))
 
-        # have the node create it's end.
-        # don't make this call earlier or we get a textbook race condition
-        logging.debug("Creating tunnel: " + self.uuid)
-        self.connection.send_cmd('create_tunnel',
-                                 {'tunnel': self.uuid,
-                                  'node': self.node.pk,
-                                  'container': self.container.uuid,
-                                  'port': self.port})
-
-    def tunnel_up(self, msg):
-        if self.bail_if_dead():
-            return
-        # and the proxies (are socket instances referred to by their fileno)
-        logging.info("Created tunnel object: %s (%d -> %d)" %
-                     (self.uuid, self.lp, self.port))
-        self.mark_as_ready()
+        # have the location create it's end.
+        self.connection.send_cmd(b'create_tunnel',
+                                 {'container': self.container.uuid,
+                                  'port': self.port}, uuid=self.uuid)
+        logging.info("Created tunnel object: %s (%d -> %d)" % (str(self.uuid), self.lp, self.port))
 
     def localport(self) -> int:
-        """Returns the (possibly dynamically allocated) local port number."""
+        """Returns the (possibly dynamically allocated) local port number.
+
+        :return: the port number as an int"""
         self.ensure_alive()
         return self.lp
 
@@ -86,18 +86,19 @@ class Tunnel(Waitable, Killable):
         if self.bail_if_dead():
             return
         self.mark_as_dead()
+        self.connection.unregister_connect_callback(self.session_reconnected)
 
         for proxy in list(self.proxies.items()):
-            self.connection.loop.unregister_fd_socket(proxy[0])
+            self.connection.loop.unregister_exclusive(proxy[0])
             proxy[1].close()
         self.proxies.clear()
-        self.connection.loop.unregister_fd_socket(self.fd)
+        self.connection.loop.unregister_exclusive(self.fd)
         self.socket.close()
         self.socket = None
-        self.connection.send_cmd('destroy_tunnel', params={"tunnel": self.uuid})
-        logging.info("Destroyed tunnel: " + self.uuid)
+        self.connection.send_cmd(b'destroy_tunnel', {"tunnel": self.uuid})
+        logging.info("Destroyed tunnel: " + str(self.uuid))
 
-    def event(self, event):
+    def event(self, localfd):
         # An event on the connection itself
         # The accept call sometimes fails
         if self.bail_if_dead():
@@ -107,38 +108,31 @@ class Tunnel(Waitable, Killable):
             try:
                 new_proxy = self.socket.accept()
             except BlockingIOError:
-                logging.warning("Attempting to accept a new connection but the resource was temporarily unavailable")
+                logging.debug("Attempting to accept a new connection but the resource was temporarily unavailable")
                 time.sleep(0.1)
 
         fd = new_proxy[0].fileno()
         self.proxies[fd] = new_proxy[0]
-        self.connection.loop.register_fd_socket(fd, self.to_proxy)
+        self.connection.loop.register_exclusive(fd, self.to_proxy, comment="proxy fd=" + str(fd))
         logging.debug("Accepted proxy connection, fd: " + str(fd))
 
-    def to_proxy(self, event):
+    def to_proxy(self, localfd):
         # Send to the location which will forward to the end client.
         if self.bail_if_dead():
             return
-        self.wait_until_ready()
-        if event[1] == 5:  # poll says this socket needs to be closed
-            logging.debug("Sending client initiated proxy close: " + str(event[0]))
-            self.close_proxy(event[0])
-            self.connection.send_cmd('close_proxy', params={"tunnel": self.uuid,
-                                                             "proxy": event[0]})
-            return
-
-        if event[1] == 4:  # actually closed
-            logging.debug("Unregistering fd socket due to event 4: " + str(event[0]))
-            self.connection.loop.unregister_fd_socket(event[0])
-            return
-
         try:
-            data = self.proxies[event[0]].recv(131072)
-            logging.debug("Sending data to proxy: " + str(event[0]))
-            self.connection.send_cmd('to_proxy', params={"tunnel": self.uuid,
-                                                          "proxy": event[0]}, bulk=data)
+            data = self.proxies[localfd].recv(131072)
+            if data == b'':
+                logging.debug("Received no data, assuming socket was closed for proxy: " + str(localfd))
+                self.close_proxy(localfd)
+                self.connection.send_cmd(b'close_proxy', {"tunnel": self.uuid,
+                                                          "proxy": localfd})
+            else:
+                logging.debug("Sending data to proxy: " + str(localfd))
+                self.connection.send_cmd(b'to_proxy', {"tunnel": self.uuid,
+                                                       "proxy": localfd}, bulk=data)
         except KeyError:
-            logging.warning("Received an event for a no-longer existent proxy: " + str(event[0]))
+            logging.debug("Received a forwarding request to a proxy not in map: " + str(localfd))
 
         return True  # everything went fine
 
@@ -150,7 +144,7 @@ class Tunnel(Waitable, Killable):
             proxy_fd = msg.params['proxy']
         except KeyError:
             # a blank message with no proxy id is to let us know it constructed server side
-            logging.debug("From proxy message with no proxy, marking tunnel as ready: " + self.uuid)
+            logging.debug("From proxy message with no proxy, marking tunnel as ready: " + str(self.uuid))
             return
 
         if msg.command == 'close_proxy':
@@ -164,21 +158,22 @@ class Tunnel(Waitable, Killable):
         except KeyError:
             pass  # proxy has already gone away
 
-    def close_proxy(self, msg):
+    def close_proxy(self, msg_or_fd):
         if self.bail_if_dead():
             return
         # Close one single proxy
         try:
             try:
-                fd = msg.params['proxy']
+                fd = msg_or_fd.params['proxy']
             except AttributeError:
-                fd = msg  # when we close the proxy locally we just need to send a file descriptor OK?
+                fd = msg_or_fd  # when we close the proxy locally we will have been passed a file desriptor
             self.proxies[fd].close()
+            self.connection.loop.unregister_exclusive(fd)
             del self.proxies[fd]
             logging.debug("Closed proxy connection, fd: " + str(fd))
         except KeyError:
             pass  # proxy has already gone away
 
     def __repr__(self):
-        return "<tfnz.tunnel.Tunnel object at %x (container-uuid=%s port=%d)>" % \
-               (id(self), self.container.uuid, self.port)
+        return "<tfnz.tunnel.Tunnel object at %x (uuid=%s port=%d)>" % \
+               (id(self), str(self.uuid), self.port)

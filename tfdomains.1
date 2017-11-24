@@ -1,0 +1,47 @@
+.TH TFDOMAINS(1)
+.SH NAME
+tfdomains - administer served domains for 20ft
+.SH SYNOPSIS
+.B tfdomains
+[\fB\-h\fR]
+[\fB\-\-location \fIx.20ft.nz\fR]
+[\fB\-\-local \fIy.local\fR]
+         \fBlist\fR
+         \fBprepare my.com\fR
+         \fBclaim my.com\fR
+         \fBrelease my.com\fR
+
+.SH DESCRIPTION
+.B tfdomains
+Administers the relationship between a 20ft web gateway and which domains are available for you to redirect.
+
+The process of claiming a domain takes place in two steps:
+
+.TP
+.BR Preparing
+20ft will return a token that must be added as a subdomain text record to the domain. Once this has happened you have two hours to complete the process.
+.TP
+.BR Claiming
+20ft will confirm that the token was added to the public DNS for the domain. Once this has happened you are able to delete the DNS record.
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Present cli help.
+.TP
+.BR \-\-location\ x\.20ft\.nz
+Use an (optional) non-default location (fqdn)
+.TP
+.BR \-\-local\ y.local
+An optional (local) ip for the broker
+.TP
+.BR list
+List the domains you are able to redirect.
+.TP
+.BR prepare
+Receive a token to prepare a domain to be claimed.
+.TP
+.BR claim
+Claim a domain once the token has been published.
+.TP
+.BR release
+Release a previously claimed domain.

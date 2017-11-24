@@ -12,38 +12,44 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 """
 
-from setuptools import setup
+from setuptools import setup, find_packages
+
 setup(name='tfnz',
-      version='1.0.0',
+      version='1.1.7',
       author='David Preece',
       author_email='davep@polymath.tech',
       url='https://20ft.nz',
       license='BSD',
-      packages=['tfnz'],
-      install_requires=['pyzmq', 'libnacl', 'py3dns', 'requests', 'requests-unixsocket', 'shortuuid', 'psutil'],
+      packages=find_packages("."),
+      install_requires=['pyzmq', 'libnacl', 'py3dns', 'requests', 'shortuuid', 'cbor',
+                        'paramiko', 'psutil', 'requests_unixsocket', 'bottle'],
       description='SDK for 20ft.nz',
       long_description="The SDK for the 20ft.nz container infrastructure. " +
-                       "This package contains the SDK, the 'tf' command line tool and man page. " +
+                       "This package contains the SDK, command line tools and man pages. " +
                        "Main documentation is at http://docs.20ft.nz",
       keywords='container containers docker orchestration 20ft 20ft.nz',
       classifiers=[
-            'Development Status :: 4 - Beta',
-            'Intended Audience :: Developers',
-            'Intended Audience :: Information Technology',
-            'Intended Audience :: System Administrators',
-            'License :: OSI Approved :: BSD License',
-            'Natural Language :: English',
-            'Operating System :: MacOS :: MacOS X',
-            'Topic :: Software Development :: Testing',
-            'Topic :: System :: Software Distribution',
-            'Programming Language :: Python :: 3.4',
-            'Programming Language :: Python :: 3.5',
-            'Programming Language :: Python :: 3.6'
+          'Development Status :: 4 - Beta',
+          'Intended Audience :: Developers',
+          'Intended Audience :: Information Technology',
+          'Intended Audience :: System Administrators',
+          'License :: OSI Approved :: BSD License',
+          'Natural Language :: English',
+          'Topic :: Software Development :: Testing',
+          'Topic :: System :: Software Distribution',
+          'Programming Language :: Python :: 3.4',
+          'Programming Language :: Python :: 3.5',
+          'Programming Language :: Python :: 3.6'
       ],
       entry_points={
-            'console_scripts': ['tf=tfnz.tf:main']
+          'console_scripts': ['tf=tfnz.cli.tf:main',
+                              'tfvolumes=tfnz.cli.tfvolumes:main',
+                              'tfdomains=tfnz.cli.tfdomains:main',
+                              'tfacctbak=tfnz.cli.tfacctbak:main',
+                              'tfresources=tfnz.cli.tfresources:main',
+                              'tfcache=tfnz.cli.tfcache:main']
       },
-      data_files=[
-            ('/usr/local/share/man/man1', ['tf.1'])
-      ]
-)
+      package_data={
+          '': ['*.1']
+      }
+      )

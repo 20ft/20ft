@@ -1,0 +1,2 @@
+pip3.6 install sphinx sphinx_rtd_theme sphinxcontrib-googleanalytics
+export PYTHONPATH=".."

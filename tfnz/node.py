@@ -15,9 +15,10 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import logging
 import weakref
-from . import description
+import shortuuid
+from .docker import Docker
 from .container import Container
-from .send import Sender
+from .volume import Volume
 
 
 class Node:
@@ -28,82 +29,143 @@ class Node:
         self.parent = weakref.ref(parent)
         self.pk = pk
         self.conn = weakref.ref(conn)
-        self.stats = stats
-        self.containers = {}
+        self.stats = stats  #: A dictionary of performance stats for this node. Automatically kept up to date.
+        self.containers = {}  #: A uuid->object map of containers running on this node (for the current session).
 
-    def spawn(self, image, env=None, sleep=False, pre_boot_files={}, no_image_check=False) -> Container:
+    def spawn_container(self, image: str, *, env: list=None, sleep: bool=False, volumes: list=None,
+                        pre_boot_files: list=None, command: str=None,
+                        stdout_callback=None, termination_callback=None, advertised_tag=None) -> Container:
         """Asynchronously spawns a container on the node.
 
-           :param image: the short image id from Docker.
-           :param env: a list of environment name, value pairs to be passed.
-           :param sleep: replaces the Entrypoint/Cmd with a single blocking command (container still boots).
-           :param pre_boot_files: A dictionary of file name and contents to be written in the container before booting.
-           :param no_image_check: does not check to ensure image has been uploaded.
-           :return: A Container object.
+        :param image: the short image id from Docker.
+        :param env: a list of environment name, value pairs to be passed.
+        :param sleep: replaces the Entrypoint/Cmd with a single blocking command (container still boots).
+        :param volumes: a list of (volume, mountpoint) pairs.
+        :param pre_boot_files: List (filename, data) pairs to write into the container before booting.
+        :param command: ignores Entrypoint/Cmd and launches with this script instead.
+        :param stdout_callback: Called when the container sends output - signature (container, string).
+        :param termination_callback: For when the container completes - signature (container).
+        :param advertised_tag: A tag used so other sessions (for the same user) can reference the container.
+        :return: A Container object.
 
-           The resulting Container is initially a placeholder until the container has spawned.
-           To block until it has actually spawned call wait_until_ready() on the container.
-           Any layers that need to be uploaded to the location are uploaded automatically.
-           Note that the container will not be marked as ready until it actually has booted."""
-        if not no_image_check:
-            self.parent().ensure_image_uploaded(image)
+        The resulting Container is initially a placeholder until the container has spawned.
+        Any layers that need to be uploaded to the location are uploaded automatically.
+        Note that the container will not be marked as ready until it actually has booted.
+
+        To launch synchronously call wait_until_ready() on the container. This will also cause any exceptions
+        to be transported to the calling thread."""
+
+        # Ensure the lists are lists of tuples (or None)us
+        if env is not None and len(env) > 0:
+            try:
+                if len(env[0]) != 2:
+                    raise TypeError  # do this because env[0] throws the same if we pass the wrong type
+            except TypeError:
+                raise ValueError("You need to pass a list of tuples for env vars - [(variable_name, data), ...]")
+        if volumes is not None and len(volumes) > 0:
+            try:
+                for vol in volumes:
+                    if len(vol) != 2:
+                        raise TypeError
+                    if not isinstance(vol[0], Volume):
+                        raise TypeError()
+            except TypeError:
+                raise ValueError("You need to pass a list of tuples for volumes - [(volume_object, mount_point), ...]")
+        if pre_boot_files is not None and len(pre_boot_files) > 0:
+            try:
+                if len(pre_boot_files[0]) != 2:
+                    raise TypeError
+            except TypeError:
+                raise ValueError("You need to pass a list of tuples for pre-boot files - [(filename, data), ...]")
+        if advertised_tag is not None:
+            reply = self.conn().send_blocking_cmd(b'approve_tag', {'tag': advertised_tag})
+            advertised_tag = reply.params['tag']
+
+        # Init
+        self.stdout_callback = stdout_callback
+        self.termination_callback = termination_callback
 
         # Make it go...
-        descr = description(image)
+        descr = Docker.description(image, self.conn())
         if 'ContainerConfig' in descr:
             del descr['ContainerConfig']
         if sleep:
-            descr['Config']['Entrypoint'] = None
-            descr['Config']['Cmd'] = ['sleep', 'inf']
-        uuid = self.conn().send_cmd('spawn_container',
-                                    {'node': self.pk,
-                                     'layer_stack': Sender.layer_stack(image),
-                                     'description': descr,
-                                     'env': env,
-                                     'pre_boot_files': pre_boot_files}, reply_callback=self.container_status_update)
+            descr['Config']['Entrypoint'] = []
+            descr['Config']['Cmd'] = None
+        if command is not None:
+            descr['Config']['Entrypoint'] = []
+            descr['Config']['Cmd'] = [command]  # will overwrite the container's config
+        vol_struct = [(vol[0].uuid, vol[1]) for vol in volumes] if volumes is not None else None
+        layers = self.parent().ensure_image_uploaded(image, descr=descr)
 
-        # Create the container object
-        self.containers[uuid] = Container(self, image, uuid, descr, env)
-        logging.info("Spawning container: " + uuid)
-
+        # Create the container object then tell the node to actually create it
+        uuid = shortuuid.uuid().encode()
+        logging.info("Spawning container: " + str(uuid))
+        self.containers[uuid] = Container(self, image, uuid, descr, env, volumes)
+        cookie = {'session': self.conn().rid, 'user': self.parent().user_pk, 'tag': advertised_tag}
+        self.conn().send_cmd(b'spawn_container', {'node': self.pk,
+                                                  'layer_stack': layers,
+                                                  'description': descr,
+                                                  'env': env,
+                                                  'volumes': vol_struct,
+                                                  'pre_boot_files': pre_boot_files,
+                                                  'cookie': cookie},
+                             uuid=uuid,
+                             reply_callback=self._container_status_update)
         return self.containers[uuid]
 
     def destroy_container(self, container: Container):
         """Destroy a container running on this node. Will also destroy any tunnels onto the container.
 
         :param container: The container to be destroyed."""
+        if not isinstance(container, Container):
+            raise TypeError()
         container.ensure_alive()
-        loc = self.parent()
-        for tun in list(loc.tunnels.values()):
-            if tun.container is container:
-                loc.destroy_tunnel(tun)
-        self.containers[container.uuid].internal_destroy()
-        del self.containers[container.uuid]
+        container._internal_destroy()
+        # removing from .containers and marking any volumes as being free happens in container_status_update
 
     def all_containers(self) -> [Container]:
-        """Returns all the containers running on this node (for *this* session)"""
+        """Returns a list of all the containers running on this node (for *this* session)
+
+        :return: A list of Container objects."""
         return list(self.containers.values())
 
-    def update_stats(self, stats):
+    def _update_stats(self, stats):
         # the node telling us it's current resource state
         self.stats = stats
-        logging.debug("Stats updated for node: " + self.pk)
+        logging.debug("Stats updated for node: " + str(self.pk))
 
-    def container_status_update(self, msg):
+    def _container_status_update(self, msg):
         try:
             container = self.containers[msg.uuid]
-            if container.bail_if_dead():
-                return
         except KeyError:
-            logging.warning("Status update was sent for a non-existent container")
+            logging.debug("Status update was sent for a non-existent container")
+            return
 
         if 'exception' in msg.params:
-            raise ValueError(msg.params['exception'])
+            container.unblock_and_raise(ValueError(msg.params['exception']))
+            return
+
+        if 'status' not in msg.params:
+            if self.stdout_callback is not None:
+                self.stdout_callback(container, msg.bulk)
+            return
+
+        if msg.params['status'] == 'building_layer':
+            logging.info("Node is building a layer: " + msg.params['layer'])
+            return
 
         if msg.params['status'] == 'running':
-            logging.info("Container is running: " + msg.uuid)
-            container._ip = msg.params['ip']
+            logging.info("Container is running: " + str(msg.uuid))
+            container.ip = msg.params['ip']
             container.mark_as_ready()
+            return
+
+        if msg.params['status'] == 'destroyed':
+            if self.termination_callback is not None:
+                self.termination_callback(container)
+            del self.containers[msg.uuid]
+            logging.info("Container has exited and/or been destroyed: " + str(msg.uuid))
 
     def __repr__(self):
         return "<tfnz.node.Node object at %x (pk=%s containers=%d)>" % (id(self), self.pk, len(self.containers))

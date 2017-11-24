@@ -1,0 +1,14 @@
+[Unit]
+Description=20ft docs site
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tf -w docs.20ft.nz tfnz/docs
+KillSignal=SIGINT
+TimeoutStopSec=5
+Restart=always
+User=admin
+Group=admin
+
+[Install]
+WantedBy=multi-user.target

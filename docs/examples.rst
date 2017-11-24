@@ -17,12 +17,12 @@ PyCharm offers built in support for unit testing. Writing unit tests for contain
 
        @classmethod
        def setUpClass(cls):
-           cls.location = Location(debug_log=False)
+           cls.location = Location()
            cls.location.ensure_image_uploaded('nginx')
 
        def test_spawn_preboot(self):
            # write configuration files before we boot
-           preboot = {'/usr/share/nginx/html/index.html': 'Hello World!'}
+           preboot = [('/usr/share/nginx/html/index.html', 'Hello World!')]
            container = TfTest.location.best_node().spawn('nginx', pre_boot_files=preboot, no_image_check=True)
            self.assertTrue(b'Hello World!' in container.fetch('/usr/share/nginx/html/index.html'))
 

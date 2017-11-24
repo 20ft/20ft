@@ -1,0 +1,4 @@
+#!/bin/sh
+while true; do
+	python3 tf_test.py
+done
