@@ -16,10 +16,15 @@ from tfnz.location import Location, RankBias
 from tfnz.container import Container
 from tfnz.volume import Volume
 from tfnz.docker import Docker
-from tfnz.endpoint import WebEndpoint, Cluster
+from tfnz.endpoint import Cluster
 
 
 class TfTest(TestCase):
+    location = None
+    location_string = "sydney.20ft.nz"
+    location_cert = "~/.ssh/aws_sydney.pem"
+    disable_laksa_restart = True
+
     @classmethod
     def setUpClass(cls):
         # # ensure we have all the right images
@@ -31,10 +36,7 @@ class TfTest(TestCase):
         # [f.result() for f in futures]
 
         # connect to the location
-        cls.location_string = "sydney.20ft.nz"
-        cls.location_cert = "~/.ssh/aws_sydney.pem"
-        cls.location = Location(location=cls.location_string)
-        cls.disable_laksa_restart = True
+        location = Location(location=cls.location_string)
 
     @classmethod
     def tearDownClass(cls):
@@ -131,7 +133,6 @@ class TfTest(TestCase):
 
             # catching passing the wrong object for volumes when spawning
             node = TfTest.location.best_node()
-
             try:
                 node.spawn_container('alpine', volumes=(vol2, '/mount/point'))  # deliberately wrong, don't fix!
                 self.assertTrue(False, "Did not catch spawn_container being passed the wrong object for volumes")
@@ -148,7 +149,6 @@ class TfTest(TestCase):
             time.sleep(1)
             ctr3 = node.spawn_container('alpine', volumes=[(vol2, '/mount/point')])
             self.assertTrue(ctr3.fetch('/mount/point/test') == b'I am a test', "Volume not actually persistent")
-
             node.destroy_container(ctr3)
         finally:
             # clean up, for obvious reasons they're not garbage collected :)
@@ -159,6 +159,7 @@ class TfTest(TestCase):
     def test_vol_subtree(self):
         current = set()
         current.add('/mount/point')
+
         # propose a subtree
         i1 = Volume.trees_intersect(current, '/mount/point/subtree')
         self.assertTrue(i1[0] == '/mount/point/subtree' and i1[1] == '/mount/point')
@@ -241,17 +242,21 @@ class TfTest(TestCase):
         # can we connect one container to another?
         server = TfTest.location.best_node().spawn_container('nginx')
         client = TfTest.location.best_node().spawn_container('alpine')
+
         # make the client more clienty
         client.run_process('apk update')
         client.run_process('apk add curl')
+
         # not yet
         cmd = "curl --connect-timeout 1 http://" + server.ip
         stdout, stderr, exit_code = client.run_process(cmd)
         self.assertTrue(exit_code != 0, "curl should have failed")
+
         # connect them
         server.allow_connection_from(client)
         stdout, stderr, exit_code = client.run_process(cmd)
         self.assertTrue(b'Welcome to nginx!' in stdout, 'Did not manage to connect containers')
+
         # disconnect again
         server.disallow_connection_from(client)
         time.sleep(0.1)
@@ -308,6 +313,7 @@ class TfTest(TestCase):
             return
         ep = eps[TfTest.location_string]
 
+        cluster = None
         try:
             # create self-signed cert
             subprocess.call(['echo "\n\n\n\n\n%s\n\n" | '
@@ -428,6 +434,7 @@ class TfTest(TestCase):
         self.assertTrue(True)
         for loc in locs:
             loc.disconnect()
+        containers.clear()
         locs.clear()
 
     def test_portscan_connect(self):
@@ -564,10 +571,11 @@ class TfTest(TestCase):
         self.assertTrue(self.terminate_data == container, "Termination callback was not called")
 
     def test_laksa_restart(self):
-        # I CAN NOT MAKE THIS BASTARD WORK.
+        # I CAN NOT MAKE THIS WORK.
         # But it runs off the cli just fine. Something about test stubs?
         if TfTest.disable_laksa_restart:
             return
+
         # needs automated ssh onto location to pass
         container = TfTest.location.best_node().spawn_container('tfnz/env_test')
         tunnel = container.wait_http_200()
@@ -600,7 +608,7 @@ class TfTest(TestCase):
         reply = requests.get('http://127.0.0.1:' + str(tnl.localport()))
         self.assertTrue('Welcome to nginx!' in reply.text, 'Did not get the expected reply from container')
 
-        # being a bastard about it
+        # being a pain about it
         tunnels = []
         for i in range(0, 10):
             if random.randint(0, 1) == 0:
@@ -632,8 +640,10 @@ class TfTest(TestCase):
             pre_run = []
         node = TfTest.location.best_node()
         logging.debug("Destructive behaviour: " + spawn)
+
         # bad container does a bad thing, does it prevent good container from booting?
         bad_container = node.spawn_container('alpine')
+
         # do we have some stuff to do before we're bad?
         for cmd in pre_run:
             bad_container.run_process(cmd)
