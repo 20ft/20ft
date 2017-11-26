@@ -29,6 +29,7 @@ from tfnz.volume import Volume
 from tfnz.docker import Docker
 from tfnz.endpoint import Cluster
 from tfnz.cli import base_argparse, Interactive
+from tfnz.cli.systemd import systemd
 
 
 def main():
@@ -64,11 +65,15 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     launch_group.add_argument('-r', help="add a remote->local tcp proxy", action='append', metavar='55555')
     launch_group.add_argument('-c', help='use this command (in container) to start', metavar='script.sh')
     launch_group.add_argument('-w', help='publish on web endpoint (maybe rewrite header, maybe ssl cert)',
-                              metavar='test.20ft.nz[:www.my.com[:certname]]')
+                              metavar='[subdomain.]wip.my.com[:www.my.com[:certname]]')
     interactive_group = parser.add_argument_group('local/interactive options')
     interactive_group.add_argument('--ssh', help='create an ssh/sftp wrapped shell on given port', metavar='2222')
     interactive_group.add_argument('-s', help='short form for "--ssh 2222"', action='store_true')
     interactive_group.add_argument('-z', help='launch the container asleep (instead of cmd)', action='store_true')
+    server_group = parser.add_argument_group('server options')
+    server_group.add_argument('--systemd', help='create a systemd service', metavar='user@tinyserver.my.com')
+    server_group.add_argument('--identity', help='specify an identity file')
+
     parser.add_argument('source', help="if 'XXX.py' exists and implements tf_main, call the method; "
                                        "if '.', runs the most recently added docker image; "
                                        "else this is the tag or hex id of an image to run.")
@@ -97,6 +102,19 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
             except FileNotFoundError:
                 print("Could not find the source pre-boot file: " + files[0], file=sys.stderr)
                 return 1
+
+
+    # connect
+    location = None
+    try:
+        location = Location(args.location, location_ip=args.local, quiet=args.q, debug_log=args.v)
+    except BaseException as e:
+        print("Failed while connecting to location: " + str(e), file=sys.stderr)
+        return 1
+
+    # are we making a systemd service?
+    if args.systemd is not None:
+        return systemd(location, args, argv, preboot)
 
     # are we using the most recent build?
     if args.source == '.':
@@ -143,13 +161,6 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                 return 1
             l_ports.add(local)
             portmap.append((local, remote))
-
-    # connect
-    try:
-        location = Location(args.location, location_ip=args.local, quiet=args.q, debug_log=args.v)
-    except BaseException as e:
-        print("Failed while connecting to location: " + str(e), file=sys.stderr)
-        return 1
 
     # have nodes?
     if len(location.nodes) == 0:
