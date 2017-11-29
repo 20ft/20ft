@@ -23,11 +23,11 @@ PyCharm offers built in support for unit testing. Writing unit tests for contain
        def test_spawn_preboot(self):
            # write configuration files before we boot
            preboot = [('/usr/share/nginx/html/index.html', 'Hello World!')]
-           container = TfTest.location.best_node().spawn('nginx', pre_boot_files=preboot, no_image_check=True)
+           container = TfTest.location.ranked_nodes()[0].spawn('nginx', pre_boot_files=preboot, no_image_check=True)
            self.assertTrue(b'Hello World!' in container.fetch('/usr/share/nginx/html/index.html'))
 
        def test_tunnels_http(self):
-           container = TfTest.location.best_node().spawn('nginx', no_image_check=True)
+           container = TfTest.location.ranked_nodes()[0].spawn('nginx', no_image_check=True)
 
            # creating a tunnel after http 200
            tnl = container.wait_http_200()

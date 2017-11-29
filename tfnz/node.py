@@ -1,16 +1,15 @@
-"""Copyright (c) 2017 David Preece, All rights reserved.
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-"""
+# Copyright (c) 2017 David Preece, All rights reserved.
+# 
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 
 import logging
@@ -22,8 +21,7 @@ from .volume import Volume
 
 
 class Node:
-    """An object representing a single node. Do not construct directly, use ranked_nodes or best_node on the location.
-    """
+    """An object representing a single node. Do not construct directly, use ranked_nodes on the location."""
     def __init__(self, parent, pk, conn, stats):
         # Internal Use: Don't construct nodes directly
         self.parent = weakref.ref(parent)
@@ -35,7 +33,7 @@ class Node:
     def spawn_container(self, image: str, *, env: list=None, sleep: bool=False, volumes: list=None,
                         pre_boot_files: list=None, command: str=None,
                         stdout_callback=None, termination_callback=None, advertised_tag=None) -> Container:
-        """Asynchronously spawns a container on the node.
+        """Asynchronously (by default) spawns a container on the node.
 
         :param image: the short image id from Docker.
         :param env: a list of environment name, value pairs to be passed.
@@ -55,7 +53,7 @@ class Node:
         To launch synchronously call wait_until_ready() on the container. This will also cause any exceptions
         to be transported to the calling thread."""
 
-        # Ensure the lists are lists of tuples (or None)us
+        # Ensure the lists are lists of tuples (or None)
         if env is not None and len(env) > 0:
             try:
                 if len(env[0]) != 2:

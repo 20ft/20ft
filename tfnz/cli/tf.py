@@ -1,17 +1,16 @@
-"""
-Copyright (c) 2017 David Preece, All rights reserved.
+# Copyright (c) 2017 David Preece, All rights reserved.
+#
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-"""
 
 # the method to implement is tf_main(location, node, environment, portmap, pass_args)
 
@@ -21,15 +20,14 @@ import signal
 import re
 import os
 import os.path
-from sys import exit, argv, stdin, stderr
+from sys import exit, argv, stderr
 from importlib import import_module
 from messidge import default_location, create_account
-from tfnz.location import Location, RankBias
+from tfnz.location import Location
 from tfnz.volume import Volume
 from tfnz.docker import Docker
 from tfnz.endpoint import Cluster
-from tfnz.cli import base_argparse, Interactive
-from tfnz.cli.systemd import systemd
+from tfnz.cli import base_argparse, systemd, Interactive
 
 
 def main():
@@ -74,13 +72,11 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     server_group.add_argument('--systemd', help='create a systemd service', metavar='user@tinyserver.my.com')
     server_group.add_argument('--identity', help='specify an identity file')
 
-    parser.add_argument('source', help="if 'XXX.py' exists and implements tf_main, call the method; "
-                                       "if '.', runs the most recently added docker image; "
+    parser.add_argument('source', help="if '.', runs the most recently added docker image; "
                                        "else this is the tag or hex id of an image to run.")
     parser.add_argument('args', help='arguments to pass to a script or subprocess (you may need "--", see man page)',
                         nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    function_implementation = len(args.source) > 3 and args.source[-3:] == ".py"
 
     # collect any pre-boot files
     preboot = []
@@ -103,6 +99,30 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                 print("Could not find the source pre-boot file: " + files[0], file=sys.stderr)
                 return 1
 
+    # if publishing to an endpoint, we might need ssl certs
+    endpoint = None
+    rewrite = None
+    cert = None
+    fqdns = None
+    if args.w is not None:
+        # split into endpoint:rewrite:certname (rewrite and certname are optional)
+        fqdns = args.w.split(':')
+        if len(fqdns) == 0 or len(fqdns[0]) == 0:
+            print("Cannot publish to an endpoint without an address")
+            return 1
+        endpoint = fqdns[0]
+
+        if len(fqdns) > 1 and len(fqdns[1]) > 0:
+            rewrite = fqdns[1]
+
+        if len(fqdns) > 2 and len(fqdns[2]) > 0:
+            cert = (fqdns[2] + '.crt', fqdns[2] + '.key')
+            if not os.path.exists(cert[0]):
+                print("Cannot find certificate for ssl: " + cert[0])
+                return 1
+            if not os.path.exists(cert[1]):
+                print("Cannot find key for ssl: " + cert[1])
+                return 1
 
     # connect
     location = None
@@ -112,11 +132,16 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         print("Failed while connecting to location: " + str(e), file=sys.stderr)
         return 1
 
+    # have nodes?
+    if len(location.nodes) == 0:
+        print("Location has no nodes.", file=sys.stderr)
+        return 1
+
     # are we making a systemd service?
     if args.systemd is not None:
-        return systemd(location, args, argv, preboot)
+        return systemd(location, args, argv, preboot, cert)
 
-    # are we using the most recent build?
+    # are we going to be using the most recent build?
     if args.source == '.':
         args.source = Docker.last_image()
 
@@ -130,9 +155,9 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     environment = []
     if args.e is not None:
         for e in args.e:
-            match = re.match('[0-9A-Z_]+=', e)  # not \w because I want to exclude lowercase
+            match = re.match('[0-9A-Za-z:_]+=', e)
             if not match:
-                print("Environment variables need to be passed as 'CAPITALS_1234=result' pairs", file=sys.stderr)
+                print("Environment variables need to be passed as 'name=value' pairs", file=sys.stderr)
                 print("....error in '%s'" % e, file=sys.stderr)
                 return 1
             variable = match.group(0)[:-1]
@@ -162,11 +187,6 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
             l_ports.add(local)
             portmap.append((local, remote))
 
-    # have nodes?
-    if len(location.nodes) == 0:
-        print("Location has no nodes.", file=sys.stderr)
-        return 1
-
     # create volume mounts ensuring they don't overlap
     volumes = []
     mount_points = set()
@@ -186,30 +206,10 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
             volumes.append((location.volumes.get(key), mount))
             mount_points.add(mount)
 
-    # try to launch as a method implementation
-    cmd = args.c
-    if function_implementation:
-        try:
-            sys.path.append(os.path.dirname(os.path.expanduser(args.source)))
-            sys.path.append(os.getcwd())
-            imp = import_module(os.path.basename(args.source[:-3]))
-            pass_args = args.args
-            imp.tf_main(location, environment, portmap, preboot, volumes, cmd, pass_args)
-            signal.pause()
-        except (ImportError, TypeError, AttributeError):
-            print("Failed to import or run function in: " + args.source, file=sys.stderr)
-            print("The function to implement is: "
-                  "def tf_main(location, environment, portmap, preboot, volumes, cmd, args):",
-                  file=sys.stderr)
-            return 1
-        except KeyboardInterrupt:
-            return 0
-
     # try to launch the container
-    container = None
     interactive = Interactive(location) if args.i else None
     try:
-        node = location.best_node(RankBias.memory)
+        node = location.ranked_nodes()[0]
         container = node.spawn_container(args.source,
                                          env=environment,
                                          pre_boot_files=preboot,
@@ -240,28 +240,6 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
 
     # publish to an endpoint?
     if args.w is not None:
-        # split into endpoint:rewrite:certname (rewrite and certname are optional)
-        fqdns = args.w.split(':')
-        if len(fqdns) == 0 or len(fqdns[0]) == 0:
-            print("Cannot publish to an endpoint without an address")
-            return 1
-        endpoint = fqdns[0]
-        rewrite = None
-        cert = None
-
-        if len(fqdns) > 1 and len(fqdns[1]) > 0:
-            rewrite = fqdns[1]
-
-        if len(fqdns) > 2 and len(fqdns[2]) > 0:
-            cert = (fqdns[2] + '.crt', fqdns[2] + '.key')
-            if not os.path.exists(cert[0]):
-                print("Cannot find certificate for ssl: " + cert[0])
-                return 1
-            if not os.path.exists(cert[1]):
-                print("Cannot find key for ssl: " + cert[1])
-                return 1
-
-        # go
         container.wait_until_ready()
         clstr = Cluster([container], rewrite=rewrite)
         ep = location.endpoint_for(endpoint)

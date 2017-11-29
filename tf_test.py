@@ -1,5 +1,15 @@
-# (c) David Preece 2017
-# davep@polymath.tech : https://polymath.tech/
+# Copyright (c) 2017 David Preece, All rights reserved.
+#
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 from unittest import TestCase, main
 import subprocess
@@ -36,7 +46,7 @@ class TfTest(TestCase):
         # [f.result() for f in futures]
 
         # connect to the location
-        location = Location(location=cls.location_string)
+        cls.location = Location(location=cls.location_string)
 
     @classmethod
     def tearDownClass(cls):
@@ -60,7 +70,7 @@ class TfTest(TestCase):
         self.assertTrue(nodes[0].stats['cpu'] >= nodes[1].stats['cpu'], 'Node ranking is wrong for cpu')
 
     def test_spawn_awake(self):
-        node = TfTest.location.best_node()
+        node = TfTest.location.ranked_nodes()[0]
         container = node.spawn_container('bitnami/apache').wait_until_ready()
         self.assertTrue(isinstance(container, Container), 'spawn_container returned the wrong type of object')
         self.assertTrue(container.parent() == node, 'Container has the wrong parent')
@@ -76,7 +86,7 @@ class TfTest(TestCase):
         self.assertTrue(container.docker_config == ideal, 'Container launched with wrong docker config')
 
     def test_env_vars(self):
-        container = TfTest.location.best_node().spawn_container('tfnz/env_test', env=[('TEST', 'testy')])
+        container = TfTest.location.ranked_nodes()[0].spawn_container('tfnz/env_test', env=[('TEST', 'testy')])
         tunnel = container.wait_http_200()
 
         # did it pass the environment correctly?
@@ -88,7 +98,7 @@ class TfTest(TestCase):
 
     def test_spawn_asleep(self):
         # is it asleep?
-        container = TfTest.location.best_node().spawn_container('bitnami/apache', sleep=True)
+        container = TfTest.location.ranked_nodes()[0].spawn_container('bitnami/apache', sleep=True)
         time.sleep(5)  # give it a while to boot or fall over
         ps_result = container.run_process('/bin/ps ax')  # tests that we can still run processes
         self.assertTrue('sh' in ps_result[0].decode())
@@ -97,20 +107,20 @@ class TfTest(TestCase):
         # sent wrong
         preboot = ['/usr/share/nginx/html/index.html', 'Hello World!']
         try:
-            TfTest.location.best_node().spawn_container('nginx', pre_boot_files=preboot)
+            TfTest.location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
         except ValueError:
             self.assertTrue(True)
 
         # wrong again
         preboot = [{'/usr/share/nginx/html/index.html': 'Hello World!'}]
         try:
-            TfTest.location.best_node().spawn_container('nginx', pre_boot_files=preboot)
+            TfTest.location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
         except ValueError:
             self.assertTrue(True)
 
         # write configuration files before we boot
         preboot = [('/usr/share/nginx/html/index.html', 'Hello World!')]
-        container = TfTest.location.best_node().spawn_container('nginx', pre_boot_files=preboot)
+        container = TfTest.location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
         self.assertTrue(b'Hello World!' in container.fetch('/usr/share/nginx/html/index.html'))
 
     def test_volumes(self):
@@ -132,7 +142,7 @@ class TfTest(TestCase):
             vol = None
 
             # catching passing the wrong object for volumes when spawning
-            node = TfTest.location.best_node()
+            node = TfTest.location.ranked_nodes()[0]
             try:
                 node.spawn_container('alpine', volumes=(vol2, '/mount/point'))  # deliberately wrong, don't fix!
                 self.assertTrue(False, "Did not catch spawn_container being passed the wrong object for volumes")
@@ -181,8 +191,8 @@ class TfTest(TestCase):
         self.assertTrue(i5[0] == '/mount/tricky/one' and i5[1] == '/mount/tricky')
 
     def test_sftp(self):
-        node = TfTest.location.best_node()
-        ctr = node.spawn_container('alpine', sleep=True)
+        node = TfTest.location.ranked_nodes()[0]
+        ctr = node.spawn_container('alpine', sleep=True).wait_until_ready()
         ctr.create_ssh_server(2222)
 
         def sftp_op(command):
@@ -220,7 +230,7 @@ class TfTest(TestCase):
     def test_reboot(self):
         # create a container with some preboot files
         preboot = [('/usr/share/nginx/html/index.html', b'Hello World!')]
-        container = TfTest.location.best_node().spawn_container('nginx', pre_boot_files=preboot)
+        container = TfTest.location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
         tnl = container.wait_http_200()
 
         # Is it serving the correct file?
@@ -240,8 +250,8 @@ class TfTest(TestCase):
 
     def test_firewalling(self):
         # can we connect one container to another?
-        server = TfTest.location.best_node().spawn_container('nginx')
-        client = TfTest.location.best_node().spawn_container('alpine')
+        server = TfTest.location.ranked_nodes()[0].spawn_container('nginx')
+        client = TfTest.location.ranked_nodes()[0].spawn_container('alpine')
 
         # make the client more clienty
         client.run_process('apk update')
@@ -293,7 +303,7 @@ class TfTest(TestCase):
         ep = eps[TfTest.location_string]
 
         # create a single server cluster to serve the endpoint
-        nginx = TfTest.location.best_node().spawn_container('nginx')
+        nginx = TfTest.location.ranked_nodes()[0].spawn_container('nginx')
         cluster = Cluster([nginx])
 
         # attach the cluster to the endpoint
@@ -321,7 +331,7 @@ class TfTest(TestCase):
                              TfTest.location_string], shell=True)
 
             # create a single server cluster to serve the endpoint
-            nginx = TfTest.location.best_node().spawn_container('nginx')
+            nginx = TfTest.location.ranked_nodes()[0].spawn_container('nginx')
             cluster = Cluster([nginx])
 
             # attach the cluster to the endpoint
@@ -336,12 +346,12 @@ class TfTest(TestCase):
 
     def test_external_container(self):
         # create a server
-        server_node = TfTest.location.best_node()
+        server_node = TfTest.location.ranked_nodes()[0]
         server = server_node.spawn_container('nginx', advertised_tag='webserver').wait_until_ready()
 
         # create a client in a separate session
         client_session = Location(location=TfTest.location_string)
-        client_node = client_session.best_node()
+        client_node = client_session.ranked_nodes()[0]
         client = client_node.spawn_container('alpine').wait_until_ready()
 
         # find the server from the second session
@@ -358,7 +368,7 @@ class TfTest(TestCase):
         server_node.destroy_container(server)
 
     def test_state_tracking(self):
-        node = TfTest.location.best_node()
+        node = TfTest.location.ranked_nodes()[0]
 
         # containers
         before = len(node.all_containers())
@@ -429,7 +439,7 @@ class TfTest(TestCase):
     def test_multiple_connect(self):
         # should be banned by the geneva convention
         locs = [Location() for n in range(0, 5)]
-        nodes = [loc.best_node() for loc in locs]
+        nodes = [loc.ranked_nodes()[0] for loc in locs]
         containers = [node.spawn_container('alpine') for node in nodes]
         self.assertTrue(True)
         for loc in locs:
@@ -442,12 +452,12 @@ class TfTest(TestCase):
         ip = TfTest.location.conn.connect_ip
         socket.create_connection((ip, 2020))
         loc = Location(location=TfTest.location_string)
-        ctr = loc.best_node().spawn_container('alpine', sleep=True).wait_until_ready()  # will not return if broken
+        ctr = loc.ranked_nodes()[0].spawn_container('alpine', sleep=True).wait_until_ready()  # will not return if broken
         loc.disconnect()
 
     def test_file_handling(self):
         # tests raising exceptions, too
-        container = TfTest.location.best_node().spawn_container('nginx')
+        container = TfTest.location.ranked_nodes()[0].spawn_container('nginx')
 
         # upload a new file
         container.put('/usr/share/nginx/html/index.html', b'Hello World')
@@ -474,7 +484,7 @@ class TfTest(TestCase):
 
     def test_spawn_process(self):
         # This test fails if noodle is running in the debugger
-        container = TfTest.location.best_node().spawn_container('debian', sleep=True)
+        container = TfTest.location.ranked_nodes()[0].spawn_container('debian', sleep=True)
 
         # test command styles
         r1 = container.run_process('/bin/echo Hello World')[0]
@@ -486,11 +496,6 @@ class TfTest(TestCase):
         except ValueError:
             pass
 
-    def test_passing_function(self):
-        sys.path.append(os.getcwd())
-        imp = import_module('test_function')
-        imp.tf_main(TfTest.location, None, None, None, None, None, None)  # in practice this is not a 'user' call
-
     def test_callbacks_shell(self):
         self.terminated_process = None
 
@@ -500,7 +505,7 @@ class TfTest(TestCase):
         def test_termination_callback(obj):
             self.terminated_process = obj
 
-        node = TfTest.location.best_node()
+        node = TfTest.location.ranked_nodes()[0]
         alpine_container = node.spawn_container('alpine').wait_until_ready()
 
         # a long lived process test asynchronous results
@@ -549,7 +554,7 @@ class TfTest(TestCase):
         def test_interactive_callback(obj, data):
             self.sh_data += data
 
-        container = TfTest.location.best_node().spawn_container('alpine', sleep=True)
+        container = TfTest.location.ranked_nodes()[0].spawn_container('alpine', sleep=True)
         ash = container.spawn_process('sh', data_callback=test_interactive_callback)
         time.sleep(1)
         self.sh_data = b''
@@ -565,7 +570,7 @@ class TfTest(TestCase):
         def test_terminates_callback(obj):
             self.terminate_data = obj
 
-        container = TfTest.location.best_node().spawn_container('tfnz/ends_test',
+        container = TfTest.location.ranked_nodes()[0].spawn_container('tfnz/ends_test',
                                                                 termination_callback=test_terminates_callback)
         time.sleep(10)
         self.assertTrue(self.terminate_data == container, "Termination callback was not called")
@@ -577,7 +582,7 @@ class TfTest(TestCase):
             return
 
         # needs automated ssh onto location to pass
-        container = TfTest.location.best_node().spawn_container('tfnz/env_test')
+        container = TfTest.location.ranked_nodes()[0].spawn_container('tfnz/env_test')
         tunnel = container.wait_http_200()
         reply = requests.get('http://127.0.0.1:' + str(tunnel.localport()))
         self.assertTrue('PATH' in reply.text, "Initial server reply failed")
@@ -600,7 +605,7 @@ class TfTest(TestCase):
         self.assertTrue('PATH' in reply.text, "Server did not reconnect transparently")
 
     def test_tunnels_http(self):
-        node = TfTest.location.best_node()
+        node = TfTest.location.ranked_nodes()[0]
         container = node.spawn_container('nginx')
 
         # creating a tunnel after http 200
@@ -638,7 +643,7 @@ class TfTest(TestCase):
     def _destructive_behaviour(self, spawn, pre_run=None):
         if pre_run is None:
             pre_run = []
-        node = TfTest.location.best_node()
+        node = TfTest.location.ranked_nodes()[0]
         logging.debug("Destructive behaviour: " + spawn)
 
         # bad container does a bad thing, does it prevent good container from booting?

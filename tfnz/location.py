@@ -1,16 +1,15 @@
-"""Copyright (c) 2017 David Preece, All rights reserved.
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-"""
+# Copyright (c) 2017 David Preece, All rights reserved.
+#
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import enum
 import logging
@@ -32,16 +31,12 @@ from .volume import Volume
 from .container import ExternalContainer
 
 
-# Long running conversations (i.e. from a process back to the client) are identified by message uuids
-
-
 class RankBias(enum.Enum):
     """An enumeration to set priorities when ranking nodes"""
     cpu = 0
     memory = 1
 
 
-# noinspection PyMethodMayBeStatic
 class Location(Waitable):
     """The root location object.
 
@@ -106,39 +101,8 @@ class Location(Waitable):
         self.conn.disconnect()
         self.conn = None
 
-    def best_node(self, bias: RankBias=RankBias.memory, force_refresh: bool=False) -> Node:
-        """Choose the currently best node to launch a container on.
-
-        :param bias: prioritise memory or cpu availability
-        :param force_refresh: force a re-calculation of 'best' node
-        :return: A Node object.
-
-        This also creates an index such that repeatedly calling best_node returns nodes in order.
-        This is refreshed if a stats update arrives or force_refresh is passed as True"""
-        # initialise if we need to
-        if self.last_best_nodes is None or force_refresh:
-            self.last_best_nodes = self.ranked_nodes(bias)
-            self.last_best_node_idx = None
-        if self.last_best_node_idx is None:
-            self.last_best_node_idx = 0
-
-        # maybe there are no nodes at all
-        if len(self.last_best_nodes) == 0:
-            raise ValueError("Cannot choose best node - there are no nodes.")
-
-        # get a result, then
-        rtn = self.last_best_nodes[self.last_best_node_idx]
-
-        # next node
-        self.last_best_node_idx += 1
-        if self.last_best_node_idx >= len(self.last_best_nodes):
-            self.last_best_node_idx = 0
-
-        return rtn
-
     def ranked_nodes(self, bias: RankBias=RankBias.memory) -> [Node]:
         """Ranks the nodes in order of resource availability.
-        This is the same as a 'refresh' in best_node.
 
         :param bias: prioritise memory or cpu availability
         :return: A list of node objects.

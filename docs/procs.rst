@@ -13,7 +13,7 @@ When launching processes there can be multiple processes running concurrently an
 
     from tfnz.location import Location
 
-    location = Location().best_node()
+    location = Location().ranked_nodes()[0]
     container = node.spawn_container('nginx')
     container.wait_http_200()
     data = container.spawn_process('/bin/ps faxu').wait_until_complete()
@@ -33,7 +33,7 @@ Asynchronously... ::
     def sleep_tc(obj):
         print("---sleep terminated---")
 
-    node = Location().best_node()
+    node = Location().ranked_nodes()[0]
     container = node.spawn_container('nginx')
     vmstat = container.spawn_process('/sbin/vmstat 1',
                                      data_callback=dc, termination_callback=tc)
@@ -52,7 +52,7 @@ To interact with a long-lived process you can inject into the process's stdin st
     from tfnz.location import Location
 
     location = Location()
-    container = location.best_node().spawn_container('nginx')
+    container = location.ranked_nodes()[0].spawn_container('nginx')
     shell = container.spawn_process('/bin/bash')
     reply = shell.stdin("/bin/ps faxu\n".encode(), return_reply=True, drop_echo=True)
     print(reply.decode())
@@ -72,7 +72,7 @@ While traditional to launch a bash process then attach the streams, on SmartOS w
         sys.stdout.flush()
 
 
-    node = Location().best_node()
+    node = Location().ranked_nodes()[0]
     container = node.spawn_container('alpine', sleep=True).wait_until_ready()
     shell = container.spawn_shell(data_callback=dc)
     time.sleep(2)
