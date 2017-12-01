@@ -14,7 +14,7 @@
 from setuptools import setup, find_packages
 
 setup(name='tfnz',
-      version='1.1.8',
+      version='1.1.10',
       author='David Preece',
       author_email='davep@polymath.tech',
       url='https://20ft.nz',

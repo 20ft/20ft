@@ -218,9 +218,9 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                                                           else lambda _, out: Interactive.stdout_flush(out)),
                                          termination_callback=(interactive.termination_callback if args.i
                                                                else location.disconnect),
-                                         command=cmd,
+                                         command=args.c,
                                          sleep=args.z)
-        container.wait_until_ready(timeout=30)  # a transport for exceptions
+        container.wait_until_ready()  # a transport for exceptions
     except ValueError as e:
         print("Failed while spawning container: " + str(e))
         return 1

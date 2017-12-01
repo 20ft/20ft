@@ -31,19 +31,19 @@ from tfnz.endpoint import Cluster
 
 class TfTest(TestCase):
     location = None
-    location_string = "sydney.20ft.nz"
-    location_cert = "~/.ssh/aws_sydney.pem"
+    location_string = "tiny.20ft.nz"
+    location_cert = "~/.ssh/id_rsa"
     disable_laksa_restart = True
 
     @classmethod
     def setUpClass(cls):
-        # # ensure we have all the right images
-        # images = ['nginx', 'alpine', 'bitnami/apache', 'tfnz/env_test', 'tfnz/ends_test', 'debian']
-        # futures = []
-        # with ThreadPoolExecutor() as executor:
-        #     for image in images:
-        #         futures.append(executor.submit(subprocess.call, (['docker', 'pull', image])))
-        # [f.result() for f in futures]
+        # ensure we have all the right images
+        images = ['nginx', 'alpine', 'bitnami/apache', 'tfnz/env_test', 'tfnz/ends_test', 'debian']
+        futures = []
+        with ThreadPoolExecutor() as executor:
+            for image in images:
+                futures.append(executor.submit(subprocess.call, (['docker', 'pull', image])))
+        [f.result() for f in futures]
 
         # connect to the location
         cls.location = Location(location=cls.location_string)

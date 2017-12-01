@@ -59,7 +59,7 @@ class Tunnel(Killable):
         self.socket.setblocking(False)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            self.socket.bind(('0.0.0.0' if self.bind is None else self.bind, 0 if self.lp is None else self.lp))
+            self.socket.bind(('' if self.bind is None else self.bind, 0 if self.lp is None else self.lp))
             self.lp = self.socket.getsockname()[1]
         except OSError:
             pass
