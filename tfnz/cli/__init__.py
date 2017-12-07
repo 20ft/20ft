@@ -18,7 +18,7 @@ import termios
 import tty
 import select
 import re
-from subprocess import check_call
+from subprocess import check_call, CalledProcessError
 from messidge import default_location
 from tfnz.location import Location
 
@@ -79,9 +79,6 @@ def systemd(location, args, argv, preboot, cert):
     # you were warned
 
     # checks
-    if '.py' in args.source:
-        print("Cannot automatically deploy a function based instance")
-        return 1
     if '/' not in args.source:
         print("Use a tagged image (i.e. my/example) to create a service")
         return 1
@@ -139,15 +136,17 @@ Group=%s
 [Install]
 WantedBy=multi-user.target
     ''' % (args.source, ' '.join(argv), path, username, username))
-    check_call('echo "put %s" | %s:%s' % (filename, sftp, path), shell=True)
+    check_call('echo "put %s" | %s:%s\n' % (filename, sftp, path), shell=True)
     check_call(['rm', filename])
 
     # let systemd know
-    check_call(ssh + ['sudo', 'ln', '-s', path + filename, '/etc/systemd/system/'])
+    try:
+        check_call(ssh + ['sudo', 'ln', '-s', path + filename, '/etc/systemd/system/'])
+    except CalledProcessError as e:
+        print("WARNING: creating symlink into /etc/systemd/system failed - link may well be there already")
     check_call(ssh + ['sudo', 'systemctl', 'enable', service_name])
     check_call(ssh + ['sudo', 'systemctl', 'daemon-reload'])
     check_call(ssh + ['sudo', 'systemctl', 'start', service_name])
-    return 0
 
 
 class Interactive:

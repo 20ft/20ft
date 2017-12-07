@@ -139,7 +139,9 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
 
     # are we making a systemd service?
     if args.systemd is not None:
-        return systemd(location, args, argv, preboot, cert)
+        systemd(location, args, argv, preboot, cert)
+        location.disconnect()
+        return 0
 
     # are we going to be using the most recent build?
     if args.source == '.':
