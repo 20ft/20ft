@@ -62,8 +62,8 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     launch_group.add_argument('-p', help='add a local->remote tcp proxy', action='append', metavar='8080:80')
     launch_group.add_argument('-r', help="add a remote->local tcp proxy", action='append', metavar='55555')
     launch_group.add_argument('-c', help='use this command (in container) to start', metavar='script.sh')
-    launch_group.add_argument('-w', help='publish on web endpoint (maybe rewrite header, maybe ssl cert)',
-                              metavar='[subdomain.]wip.my.com[:www.my.com[:certname]]')
+    launch_group.add_argument('-w', help='publish on web endpoint',
+                              metavar='subdomain.my.com[:www.my.com[:certname]]')
     interactive_group = parser.add_argument_group('local/interactive options')
     interactive_group.add_argument('--ssh', help='create an ssh/sftp wrapped shell on given port', metavar='2222')
     interactive_group.add_argument('-s', help='short form for "--ssh 2222"', action='store_true')
