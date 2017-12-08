@@ -23,7 +23,20 @@ dkim_template = '''
 
 
 class Mail:
-    def __init__(self, domain_name: str, recipients: [str], *, dkim=False, ssh=False, image=None):
+    def __init__(self, domain_name: str, recipients: [str], *, ssh: bool=False, image: str=None,
+                 dkim: bool=False, cert_and_key: (str, str)=(None, None)):
+        """Instantiate a mail server object.
+        If dkim=True, will log the necessary records to be added to DNS
+        The certificate and key are given as strings (not filenames).
+        The one you use for the webserver is fine if it doesn't say 'www' on it.
+
+        :param domain_name: The domain name to serve.
+        :param recipients: A list of recipients in "username:password" strings.
+        :param ssh: Create an ssh server for debugging on port 2222.
+        :param image: Use a container image other than tfnz/mail.
+        :param dkim: Sign outgoing emails.
+        :param cert_and_key: Don't self-sign a certificate, use this (cert, key) pair. SSL, not DKIM. PEM format.
+        :return: A dict representation of image metadata."""
         # check the recipients are in name:pass format
         recipient_re = re.compile('\A[a-zA-Z0-9_.+-]+:\S+\Z')
         self.recipients = [r.strip('\n') for r in recipients]
@@ -32,15 +45,28 @@ class Mail:
                 raise ValueError("Email addresses should be in a 'username:password' format")
         if domain_name is None or len(domain_name) == 0:
             raise ValueError("Exim needs a domain name to function (try 'local'?)")
+        if cert_and_key is not (None, None) and len(cert_and_key) != 2:
+                raise ValueError("Certificate and key need to be passed as a 2-tuple")
         self.domain_name = domain_name
         self.ssh = ssh
         self.server_condition = '${if !eq{$tls_cipher}{}}'  # nasty hack to get around .format trying to expand it
         self.dkim = dkim
         self.dkim_text = ''
         self.image = 'tfnz/mail' if image is None else image
+        self.cert_and_key = cert_and_key
 
-    def go(self, location: Location, volume: Volume, *, log_callback=None,
-           local_smtp=25, local_smtps=465, local_imap=993):
+    def spawn(self, location: Location, volume: Volume, *, log_callback=None,
+              local_smtp=25, local_smtps=465, local_imap=993):
+        """Instantiate the mail server container.
+        Anything with a username/password has to go over SSL. So port 25 is only for mail delivery, not relay.
+
+        :param location: A location (object) to connect to.
+        :param volume: A volume (object) to use as a persistent store.
+        :param log_callback: An optional callback for log messages -  - signature (object, bytes)
+        :param local_smtp: TCP port to open locally for smtp traffic - can only be used for delivery.
+        :param local_smtps: TCP port to open locally for smtp (with SSL) traffic.
+        :param local_imap: TCP port to open locally for IMAP (with SSL).
+        """
         # create the container
         node = location.ranked_nodes(RankBias.memory)[0]
         container = node.spawn_container(self.image,
@@ -51,6 +77,11 @@ class Mail:
         # maybe an ssh window
         if self.ssh:
             container.create_ssh_server()
+
+        # maybe we were passed a certificate?
+        if self.cert_and_key is not (None, None):
+            container.put('/var/mail/server.pem', self.cert_and_key[0].encode())
+            container.put('/var/mail/server.key', self.cert_and_key[1].encode())
 
         # create certs if not there
         if b'server.pem' not in container.run_process('ls /var/mail')[0]:
