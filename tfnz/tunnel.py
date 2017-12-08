@@ -125,7 +125,12 @@ class Tunnel(Killable):
         if self.bail_if_dead():
             return
         try:
-            data = self.proxies[localfd].recv(131072)
+            data = b''
+            try:
+                data = self.proxies[localfd].recv(8192)
+            except ConnectionResetError:
+                logging.debug("Connection reset when receiving from proxy")
+                pass
             if data == b'':
                 logging.debug("Received no data, assuming socket was closed for proxy: " + str(localfd))
                 self.close_proxy(localfd)
