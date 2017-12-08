@@ -14,7 +14,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 """
 import sys
 import argparse
-import termios
 import tty
 import select
 import re
