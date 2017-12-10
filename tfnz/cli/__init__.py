@@ -124,6 +124,7 @@ Description=20ft-%s
 
 [Service]
 Type=simple
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/local/bin/tf %s
 WorkingDirectory=%s
 KillSignal=SIGINT
