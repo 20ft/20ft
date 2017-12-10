@@ -23,8 +23,7 @@ dkim_template = '''
 
 
 class Mail:
-    def __init__(self, domain_name: str, recipients: [str], *, ssh: bool=False, image: str=None,
-                 dkim: bool=False, cert_and_key: (str, str)=(None, None)):
+    def __init__(self, domain_name: str, recipients: [str], *, ssh: bool=False, image: str=None, dkim: bool=False):
         """Instantiate a mail server object.
         If dkim=True, will log the necessary records to be added to DNS
         The certificate and key are given as strings (not filenames).
@@ -35,25 +34,24 @@ class Mail:
         :param ssh: Create an ssh server for debugging on port 2222.
         :param image: Use a container image other than tfnz/mail.
         :param dkim: Sign outgoing emails.
-        :param cert_and_key: Don't self-sign a certificate, use this (cert, key) pair. SSL, not DKIM. PEM format.
         :return: A dict representation of image metadata."""
         # check the recipients are in name:pass format
         recipient_re = re.compile('\A[a-zA-Z0-9_.+-]+:\S+\Z')
         self.recipients = [r.strip('\n') for r in recipients]
+        if len(self.recipients) == 0:
+            raise ValueError("Mail needs to be passed at least one recipient")
         for recipient in self.recipients:
             if recipient_re.match(recipient) is None:
                 raise ValueError("Email addresses should be in a 'username:password' format")
         if domain_name is None or len(domain_name) == 0:
             raise ValueError("Exim needs a domain name to function (try 'local'?)")
-        if cert_and_key is not (None, None) and len(cert_and_key) != 2:
-                raise ValueError("Certificate and key need to be passed as a 2-tuple")
         self.domain_name = domain_name
         self.ssh = ssh
         self.server_condition = '${if !eq{$tls_cipher}{}}'  # nasty hack to get around .format trying to expand it
+        self.system_aliases_data= '${lookup{$local_part}lsearch{/etc/aliases}}'
         self.dkim = dkim
         self.dkim_text = ''
         self.image = 'tfnz/mail' if image is None else image
-        self.cert_and_key = cert_and_key
 
     def spawn(self, location: Location, volume: Volume, *, log_callback=None,
               local_smtp=25, local_smtps=465, local_imap=993):
@@ -77,11 +75,6 @@ class Mail:
         # maybe an ssh window
         if self.ssh:
             container.create_ssh_server()
-
-        # maybe we were passed a certificate?
-        if self.cert_and_key is not (None, None):
-            container.put('/var/mail/server.pem', self.cert_and_key[0].encode())
-            container.put('/var/mail/server.key', self.cert_and_key[1].encode())
 
         # create certs if not there
         if b'server.pem' not in container.run_process('ls /var/mail')[0]:
@@ -107,14 +100,27 @@ class Mail:
             print("%s._domainkey TXT \"v=DKIM1; p=%s\"" %
                   (dkim_selector.decode(), dkim_pk.decode()[27:-26].replace('\n', '')))
 
+        # set hostname
+        container.run_process('hostname mail')
+
         # create user accounts
-        passwd_file = b''
+        passwd_file = ''
+        first_recipient = None
         for recipient in self.recipients:
             username, password = recipient.split(':')
+            if first_recipient is None:
+                first_recipient = username
             pw = container.run_process('doveadm pw -u %s -p %s' % (username, password))[0][:-1]
-            pwl = '%s:%s:90:101\n' % (username, pw.decode())
-            passwd_file += pwl.encode()
-        container.put('/etc/dovecot/passwd', passwd_file)
+            passwd_file += '%s:%s:90:101\n' % (username, pw.decode())
+        container.put('/etc/dovecot/passwd', passwd_file.encode())
+
+        # create system aliases - uses the first recipient as the destination
+        aliases = ['root', 'postmaster', 'hostmaster', 'mail', 'admin', 'abuse',
+                   'webmaster', 'mailer-daemon', 'nobody', 'www', 'security']
+        alias_file = ''
+        for alias in aliases:
+            alias_file += '%s: %s\n' % (alias, first_recipient)
+        container.put('/etc/aliases', alias_file.encode())
 
         # render the exim configuration
         exim_template = container.fetch('/home/admin/exim_template').decode()
@@ -124,7 +130,7 @@ class Mail:
         container.spawn_process('tail -f /var/log/exim/mainlog', data_callback=log_callback)
         container.attach_tunnel(25, localport=local_smtp)
         container.attach_tunnel(465, localport=local_smtps)
-        container.spawn_process('/usr/sbin/exim -bdf', data_callback=log_callback)  # creates the exim user
+        container.spawn_process('/usr/sbin/exim -bdf -q30m', data_callback=log_callback)
 
         # same again with dovecot
         container.attach_tunnel(993, localport=local_imap)
