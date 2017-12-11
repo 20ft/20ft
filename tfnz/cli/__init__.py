@@ -14,6 +14,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 """
 import sys
 import argparse
+import termios  # this *is* used and *can* be found
 import tty
 import select
 import re
@@ -152,7 +153,11 @@ WantedBy=multi-user.target
 class Interactive:
     def __init__(self, loc):
         self.shown_escape_info = False
-        self.term_attr = termios.tcgetattr(sys.stdout.fileno())
+        self.term_attr = None
+        try:
+            self.term_attr = termios.tcgetattr(sys.stdout.fileno())
+        except termios.error:
+            pass
         self.location = loc
         self.running = True
 
@@ -182,5 +187,6 @@ class Interactive:
 
     def termination_callback(self, ctr):
         self.running = False
-        termios.tcsetattr(sys.stdout.fileno(), termios.TCSANOW, self.term_attr)
+        if self.term_attr is not None:
+            termios.tcsetattr(sys.stdout.fileno(), termios.TCSANOW, self.term_attr)
         self.location.disconnect()
