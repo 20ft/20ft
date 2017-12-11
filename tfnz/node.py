@@ -160,6 +160,9 @@ class Node:
             return
 
         if msg.params['status'] == 'destroyed':
+            # wait lock will still be locked if the container did not successfully start
+            if container.wait_lock.locked():
+                container.unblock_and_raise(ValueError("Container did not manage to start"))
             if self.termination_callback is not None:
                 self.termination_callback(container)
             del self.containers[msg.uuid]
