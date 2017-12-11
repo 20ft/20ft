@@ -179,10 +179,13 @@ class TaggedCollection:
 
     def clear(self):
         self.objects.clear()
+        
+    def will_clash(self, obj):
+        ut = obj.user_tag()
+        return ut in self.objects
 
     def raise_for_clash(self, obj):
-        ut = obj.user_tag()
-        if ut in self.objects:
+        if self.will_clash(obj):
             raise ValueError("Tag is already being used")
 
     def raise_if_will_clash(self, user, tag):
@@ -219,8 +222,8 @@ class InspectionServer(Thread):
     @staticmethod
     def serve():
         try:
-            logging.info("Started inspection server: 0.0.0.0:" + str(InspectionServer.port))
-            run(app=inspection_server, host='0.0.0.0', port=InspectionServer.port, quiet=True)
+            logging.info("Started inspection server: 127.0.0.1:" + str(InspectionServer.port))
+            run(app=inspection_server, host='127.0.0.1', port=InspectionServer.port, quiet=True)
         except OSError:
             logging.critical("Could not bind inspection server, exiting")
             exit(1)
