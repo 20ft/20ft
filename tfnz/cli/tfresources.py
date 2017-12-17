@@ -25,7 +25,7 @@ def main():
 def list_resources(location, args):
     resources = {
         'nodes': {b64encode(node.pk).decode(): node.stats for node in location.nodes.values()},
-        'volumes': [vol.display_name() for vol in location.volumes.values()],
+        'volumes': [vol.namespaced_display_name() for vol in location.volumes.values()],
         'endpoints': [ep.domain for ep in location.endpoints.values()]
     }
 

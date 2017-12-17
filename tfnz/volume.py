@@ -18,10 +18,10 @@ from . import Taggable
 
 
 class Volume(Taggable):
-    def __init__(self, connection, uuid, tag=None):
-        super().__init__(uuid, tag)
+    def __init__(self, location, uuid, tag=None):
+        super().__init__(location.user_pk, uuid, tag)
         # Do not construct directly, use Location.create_volume
-        self.connection = weakref.ref(connection)
+        self.connection = weakref.ref(location.conn)
 
     def snapshot(self):
         """Mark the current state of the volume as being it's initial state."""
@@ -48,4 +48,4 @@ class Volume(Taggable):
         return None
 
     def __repr__(self):
-        return "<tfnz.volume.Volume object at %x (%s)>" % (id(self), self.display_name())
+        return "<tfnz.volume.Volume object at %x (%s)>" % (id(self), self.namespaced_display_name())

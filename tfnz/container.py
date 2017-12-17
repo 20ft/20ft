@@ -23,7 +23,8 @@ from .backchannel import Backchannel
 
 class Container(Waitable, Killable, Connectable):
     """An object representing a single container. Do not instantiate directly, use node.spawn."""
-    def __init__(self, parent, image: str, uuid: str, docker_config: dict, env: [()], volumes: [()]):
+    def __init__(self, parent, image: str, uuid: str, docker_config: dict, env: [()], volumes: [()],
+                 *, stdout_callback=None, termination_callback=None):
         Waitable.__init__(self)
         Killable.__init__(self)
         Connectable.__init__(self, parent.conn(), uuid, parent, None)
@@ -35,6 +36,8 @@ class Container(Waitable, Killable, Connectable):
         self.docker_config = docker_config
         self.env = env
         self.volumes = volumes
+        self.stdout_callback = stdout_callback
+        self.termination_callback = termination_callback
 
     def ip(self):
         """Reports the container's ip address"""

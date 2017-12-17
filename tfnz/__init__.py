@@ -14,11 +14,9 @@
 import logging
 import re
 import weakref
-from _thread import allocate_lock
-from threading import Thread
-from bottle import run, Bottle
-from sys import exit
+import shortuuid
 from base64 import b64encode
+from _thread import allocate_lock
 
 
 class Waitable:
@@ -79,37 +77,6 @@ class Killable:
             raise ValueError("Cannot call method on a terminated object: " + self.__repr__())
 
 
-class Taggable:
-    """A resource that has a tag"""
-    tag_re = re.compile('[^0-9a-z\-_.]')
-
-    def __init__(self, uuid, tag=None, user=None):
-        self.uuid = uuid
-        self.tag = tag
-        self.user = user
-
-    @staticmethod
-    def ok_tag(tag):
-        if tag is None:
-            return None
-        tag = tag.lower()
-        if Taggable.tag_re.search(tag) is not None:
-            raise ValueError("Tag names can only use 0-9 a-z - _ and .")
-        return tag
-
-    def display_name(self):
-        return self.uuid.decode() if self.tag is None else (self.uuid.decode() + ':' + self.tag)
-
-    def user_tag(self):
-        return Taggable.create_user_tag(self.user, self.tag)
-
-    @staticmethod
-    def create_user_tag(user, tag):
-        if tag is None:
-            return None
-        return b64encode(user).decode() + tag if user is not None else tag
-
-
 class Connectable:
     """A resource that can be connected to in the private IP space"""
     def __init__(self, conn, uuid, node, ip):
@@ -131,106 +98,134 @@ class Connectable:
         logging.info("Disallowed connection (from %s) on: %s" % (str(obj.uuid), str(self.uuid)))
 
 
+class Taggable:
+    """A resource that might have a tag - namespaced by user pk."""
+    tag_re = re.compile('\A[^0-9a-z\-_.]*\Z')
+    short_uuid_re = re.compile('\A[' + shortuuid.get_alphabet() + ']{22}\Z')
+
+    def __init__(self, user: bytes, uuid: bytes, tag: str=None):
+        if user is None or uuid is None:
+            raise RuntimeError('Taggable resources must be constructed with at least a pk and uui')
+        self.user = user
+        self.uuid = uuid
+        self.tag = None if tag is None else Taggable.valid_tag(tag)
+
+    def uuid_key(self):
+        return self.user, self.uuid
+
+    def tag_key(self):
+        """Effectively a namespaced tag."""
+        if self.tag is None:
+            return None
+        return self.user, self.tag
+
+    @staticmethod
+    def valid_tag(tag):
+        """Ensure that the passed tag is at least vaguely plausible - does not check for clashes"""
+        if tag is None:
+            return None
+        if len(tag) == 0:
+            raise ValueError("Tag passed for approval was blank")
+        tag = tag.lower()
+        if Taggable.tag_re.search(tag) is not None:
+            raise ValueError("Tag names can only use 0-9 a-z - _ and .")
+        if Taggable.short_uuid_re.match(tag) is not None:
+            raise ValueError("Tag names cannot look like UUIDs")
+        return tag
+
+    def namespaced_display_name(self):
+        return self.uuid.decode() if self.tag is None else (self.uuid.decode() + ':' + self.tag)
+
+    def global_display_name(self):
+        return b64encode(self.user).decode() + ':' + self.namespaced_display_name()
+
+
 class TaggedCollection:
-    """A collection of tagged objects - plus tag management code"""
-    def __init__(self, objects: list=None):
-        """pass a uuid->object map of Taggable objects"""
+    """A collection of taggable objects"""
+    def __init__(self, initial: []=None):
         self.objects = {}
-        if objects is None:
-            return
-        for obj in objects:
-            self.add(obj)
+        self.uuid_uuidkey = {}
+        self.uniques = 0
+        if initial is not None:
+            for init in initial:
+                self.add(init)
 
-    def __contains__(self, uuid):
-        return uuid in self.objects
+    def __del__(self):
+        for obj in self.objects.values():
+            del obj
+        self.objects = {}
 
-    def __getitem__(self, item):
-        return self.objects[item]
-
-    def get(self, key, user=None):
-        """Fetches using a tag, uuid or display name to an object"""
-        if isinstance(key, bytes):
-            key = key.decode()  # passing a pure uuid will arrive as bytes
-        if ':' in key:
-            uuid, key = key.split(':')
-        else:
-            uuid = key
-        uuid = uuid.encode()  # uuid's are always stored as binary
-        try:  # try just the uuid
-            return self.objects[uuid]
-        except KeyError:
-            # try just the tag
-            ut = Taggable.create_user_tag(user, key)
-            return self.objects[ut]
-
+    # emulating a dictionary
     def __len__(self):
-        return len(self.values())
+        return self.uniques
 
+    def __getitem__(self, uuid):  # applies to just UUID's
+        uuidkey = self.uuid_uuidkey[uuid]
+        return self.objects[uuidkey]
+    
+    def __contains__(self, uuid):
+        try:
+            self[uuid]  # throws if it can't get it so, yes, this does actually do something
+            return True
+        except KeyError:
+            return False
+
+    def __setitem__(self, key, value):
+        raise RuntimeError("Tagged collection can only be inserted with the 'add' method")
+
+    def __iter__(self):
+        raise RuntimeError("Call 'Values' on the TaggedCollection then iterate over that")
+
+    # what we came here for
     def add(self, obj: Taggable):
-        self.raise_for_clash(obj)
-        self.objects[obj.uuid] = obj
-        if obj.tag is not None:
-            self.objects[obj.user_tag()] = obj
+        if self.will_clash(obj.user, obj.uuid, obj.tag):
+            raise RuntimeError("Cannot add to TaggedCollection because there will be a namespace clash")
+        self.objects[obj.uuid_key()] = obj
+        self.uuid_uuidkey[obj.uuid] = obj.uuid_key()
+        if obj.tag_key() is not None:
+            self.objects[obj.tag_key()] = obj
+        self.uniques += 1
+
+    def get(self, user: bytes, key):
+        """Fetch using an ill-defined key: uuid or tag or uuid:tag"""
+        if key is None:
+            raise RuntimeError("Key not passed when fetching from TaggedCollection")
+
+        # if bytes are passed we'll assume it's a uuid
+        if isinstance(key, bytes):
+            try:
+                return self[(user, key)]  # uuid_key
+            except KeyError:
+                raise RuntimeError("Attempted to fetch from a TaggedCollection failed - bytes were assumed to be uuid")
+
+        # user:uuid:key or maybe uuid:key?
+        user, uuid, tag = (user, None, None)
+        parts = key.split(':')
+        if len(parts) == 3:
+            user, uuid, tag = parts
+        if len(parts) == 2:
+            uuid, tag = parts
+        if len(parts) == 1:
+            tag = parts[0]
+
+        try:
+            return self.objects[(user, tag)]  # tag_key
+        except KeyError:
+            raise KeyError("Failed to 'get' from a TaggedCollection with user=%s uuid=%s key=%s" % (user, uuid, tag))
 
     def remove(self, obj: Taggable):
-        del self.objects[obj.uuid]
-        if obj.user_tag() in self.objects:
-            del self.objects[obj.user_tag()]
-
-    def clear(self):
-        self.objects.clear()
+        del self.objects[obj.uuid_key()]
+        if obj.tag_key() in self.objects:
+            del self.objects[obj.tag_key()]
+        self.uniques -= 1
         
-    def will_clash(self, obj):
-        ut = obj.user_tag()
-        return ut in self.objects
-
-    def raise_for_clash(self, obj):
-        if self.will_clash(obj):
-            raise ValueError("Tag is already being used")
-
-    def raise_if_will_clash(self, user, tag):
-        if tag is None:
-            return
-        ut = Taggable.create_user_tag(user, tag)
-        if ut in self.objects:
-            raise ValueError("Tag is already being used")
-
-    def keys(self):
-        return self.objects.keys()
+    def will_clash(self, user, uuid, tag):
+        if tag is not None:
+            if (user, tag) in self.objects:
+                return True
+        if (user, uuid) in self.objects:
+            return True
+        return False
 
     def values(self):
         return set(self.objects.values())  # de-dupe
-
-    def items(self):
-        return self.objects.items()
-
-
-inspection_server = Bottle()
-
-
-class InspectionServer(Thread):
-    """A thread for running an inspection server."""
-    parent = None  # done as a class variable because the route method needs to be static
-    port = None
-
-    def __init__(self, parent, port):
-        super().__init__(target=self.serve, name=str("Inspection server"), daemon=True)
-        InspectionServer.parent = weakref.ref(parent)
-        InspectionServer.port = port
-        self.start()
-
-    @staticmethod
-    def serve():
-        try:
-            logging.info("Started inspection server: 127.0.0.1:" + str(InspectionServer.port))
-            run(app=inspection_server, host='127.0.0.1', port=InspectionServer.port, quiet=True)
-        except OSError:
-            logging.critical("Could not bind inspection server, exiting")
-            exit(1)
-
-    @staticmethod
-    def stop():
-        inspection_server.close()
-
-    def __repr__(self):
-        return "<tfnz.InspectionServer object at %x>" % id(self)

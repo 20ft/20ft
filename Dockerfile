@@ -22,7 +22,7 @@ RUN git clone https://github.com/msabramo/requests-unixsocket.git; \
     cd ..; \
     rm -rf requests-unixsocket
 
-COPY dist/tfnz-1.1.11.tar.gz /
-RUN pip3 install tfnz-1.1.11.tar.gz ; rm /tfnz-*
+COPY dist/tfnz-1.2.0.tar.gz /
+RUN pip3 install tfnz-1.2.0.tar.gz ; rm /tfnz-*
 
 RUN apk del gcc linux-headers git ; rm -rf /var/cache /etc/motd

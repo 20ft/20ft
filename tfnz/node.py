@@ -76,12 +76,9 @@ class Node:
             except TypeError:
                 raise ValueError("You need to pass a list of tuples for pre-boot files - [(filename, data), ...]")
         if advertised_tag is not None:
-            reply = self.conn().send_blocking_cmd(b'approve_tag', {'tag': advertised_tag})
-            advertised_tag = reply.params['tag']
-
-        # Init
-        self.stdout_callback = stdout_callback
-        self.termination_callback = termination_callback
+            # will throw an exception if it's no good
+            reply = self.conn().send_blocking_cmd(b'approve_tag', {'user': self.parent().user_pk,
+                                                                   'tag': advertised_tag})
 
         # Make it go...
         descr = Docker.description(image, self.conn())
@@ -98,8 +95,9 @@ class Node:
 
         # Create the container object then tell the node to actually create it
         uuid = shortuuid.uuid().encode()
+        self.containers[uuid] = Container(self, image, uuid, descr, env, volumes,
+                                          stdout_callback=stdout_callback, termination_callback=termination_callback)
         logging.info("Spawning container: " + str(uuid))
-        self.containers[uuid] = Container(self, image, uuid, descr, env, volumes)
         cookie = {'session': self.conn().rid, 'user': self.parent().user_pk, 'tag': advertised_tag}
         self.conn().send_cmd(b'spawn_container', {'node': self.pk,
                                                   'layer_stack': layers,
@@ -145,12 +143,8 @@ class Node:
             return
 
         if 'status' not in msg.params:
-            if self.stdout_callback is not None:
-                self.stdout_callback(container, msg.bulk)
-            return
-
-        if msg.params['status'] == 'building_layer':
-            logging.info("Node is building a layer: " + msg.params['layer'])
+            if container.stdout_callback is not None:
+                container.stdout_callback(container, msg.bulk)
             return
 
         if msg.params['status'] == 'running':
@@ -163,8 +157,9 @@ class Node:
             # wait lock will still be locked if the container did not successfully start
             if container.wait_lock.locked():
                 container.unblock_and_raise(ValueError("Container did not manage to start"))
-            if self.termination_callback is not None:
-                self.termination_callback(container)
+            if container.termination_callback is not None:
+                container.termination_callback(container)
+
             del self.containers[msg.uuid]
             logging.info("Container has exited and/or been destroyed: " + str(msg.uuid))
 

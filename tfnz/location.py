@@ -78,7 +78,7 @@ class Location(Waitable):
 
         # connect
         self.conn = Connection(self.location, prefix="~/.20ft", location_ip=location_ip, exit_on_exception=True)
-        self.user_pk = b64decode(self.conn.keys.public)
+        self.user_pk = self.conn.keys.public_binary()
         self.conn.register_commands(self, Location._commands)
         self.conn.start()
         self.conn.wait_until_ready()  # will throw if the connection had a problem
@@ -123,8 +123,8 @@ class Location(Waitable):
 
         Note that asynchronous writes cannot damage a ZFS filesystem although the physical state may lag behind the
         logical state by a number of seconds. Asynchronous ZFS is *very* much faster than synchronous."""
-        tag = Taggable.ok_tag(tag)
-        msg = self.conn.send_blocking_cmd(b'create_volume', {'user': self.conn.keys.public,
+        tag = Taggable.valid_tag(tag)
+        msg = self.conn.send_blocking_cmd(b'create_volume', {'user': self.user_pk,
                                                              'tag': tag,
                                                              'async': async})
         logging.info("Created volume: " + str(msg.uuid))
@@ -138,7 +138,7 @@ class Location(Waitable):
         :param volume: The volume to be destroyed."""
         if not isinstance(volume, Volume):
             raise TypeError()
-        self.conn.send_blocking_cmd(b'destroy_volume', {'user': self.conn.keys.public,
+        self.conn.send_blocking_cmd(b'destroy_volume', {'user': self.user_pk,
                                                         'volume': volume.uuid})
         logging.info("Destroyed volume: " + str(volume.uuid))
         self.volumes.remove(volume)
@@ -154,7 +154,7 @@ class Location(Waitable):
 
         :param key: The uuid or tag of the volume object to be returned.
         :return: A Volume object."""
-        return self.volumes.get(key)
+        return self.volumes.get(self.user_pk, key)
 
     def endpoint_for(self, fqdn) -> WebEndpoint:
         """Return a WebEndpoint for the given fqdn.

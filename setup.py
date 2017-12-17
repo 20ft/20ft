@@ -14,7 +14,7 @@
 from setuptools import setup, find_packages
 
 setup(name='tfnz',
-      version='1.1.11',
+      version='1.2.0',
       author='David Preece',
       author_email='davep@20ft.nz',
       url='https://20ft.nz',
@@ -28,7 +28,7 @@ setup(name='tfnz',
                        "Main documentation is at http://docs.20ft.nz",
       keywords='container containers docker orchestration 20ft 20ft.nz',
       classifiers=[
-          'Development Status :: 4 - Beta',
+          'Development Status :: 5 - Production/Stable',
           'Intended Audience :: Developers',
           'Intended Audience :: Information Technology',
           'Intended Audience :: System Administrators',
