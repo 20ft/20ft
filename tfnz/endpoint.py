@@ -49,10 +49,6 @@ class WebEndpoint:
         self.domainchars = len(domain)
         self.clusters = {}  # uuid to cluster
 
-    def __del__(self):
-        for cluster in list(self.clusters.values()):
-            self.unpublish(cluster)
-
     def publish(self, cluster: Cluster, fqdn: str, *, ssl=None):
         # checks
         if not fqdn.endswith(self.domain):
@@ -87,7 +83,7 @@ class WebEndpoint:
 
     def unpublish(self, cluster):
         self.conn().send_cmd(b'unpublish_web', {'uuid': cluster.uuid})
-        logging.info("Unpublished: " + cluster.uuid.decode())
+        logging.info("Unpublished: " + str(cluster.uuid))
         del self.clusters[cluster.uuid]
 
     def __repr__(self):

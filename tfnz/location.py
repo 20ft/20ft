@@ -85,9 +85,6 @@ class Location(Waitable):
         self.wait_until_ready()  # doesn't return until a resource offer is made
         self.conn.loop.register_on_idle(self._heartbeat)
 
-    def __del__(self):
-        logging.debug("Location object deleted")
-
     def disconnect(self, container=None):
         """Disconnect from the location - without calling this the object cannot be garbage collected"""
         # the container is passed if you use 'disconnect' as a termination function on a container
@@ -95,11 +92,15 @@ class Location(Waitable):
         if self.conn is None:  # already disconnected
             return
         logging.info("Disconnecting")
-        self.nodes.clear()
-        self.tunnels.clear()
+        for endpoint in list(self.endpoints.values()):
+            [endpoint.unpublish(cluster) for cluster in list(endpoint.clusters.values())]
         self.endpoints.clear()
+        for tunnel in list(self.tunnels.values()):
+            tunnel.destroy()
+        self.tunnels.clear()
         self.conn.disconnect()
         self.conn = None
+        self.nodes.clear()
 
     def ranked_nodes(self, bias: RankBias=RankBias.memory) -> [Node]:
         """Ranks the nodes in order of resource availability.
@@ -247,7 +248,7 @@ class Location(Waitable):
         if container is not None:
             if tunnel.container != container:
                 raise ValueError("Tried to destroy a tunnel actually connected to a different container")
-        tunnel.internal_destroy()
+        tunnel.destroy()
         del self.tunnels[tunnel.uuid]
 
     def _from_proxy(self, msg):

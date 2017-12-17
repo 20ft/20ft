@@ -46,7 +46,7 @@ class Tunnel(Killable):
         connection.register_connect_callback(self.session_reconnected)
 
     def __del__(self):
-        self.internal_destroy()  # bails if destroyed already
+        self.destroy()  # bails if destroyed already
 
     def session_reconnected(self, rid):
         logging.debug("Tunnel reset its session id: " + str(self.uuid))
@@ -80,7 +80,7 @@ class Tunnel(Killable):
         self.ensure_alive()
         return self.lp
 
-    def internal_destroy(self):
+    def destroy(self):
         # Destroy this tunnel.
         if self.bail_if_dead():
             return
