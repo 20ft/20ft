@@ -64,7 +64,7 @@ class Location(Waitable):
         # see if we even can connect...
         ip = location_ip if location_ip is not None else self.location
         try:
-            run(['ping', '-c', '1', '-t', '5', ip], check=True, stdout=DEVNULL)
+            run(['ping', '-c', '1', ip], check=True, stdout=DEVNULL)
         except CalledProcessError:
             raise RuntimeError("Cannot ping the requested ip: " + ip)
 
@@ -101,6 +101,12 @@ class Location(Waitable):
         self.conn.disconnect()
         self.conn = None
         self.nodes.clear()
+
+    def node(self,) -> [Node]:
+        """Returns a node.
+
+           :return: A node object"""
+        return self.ranked_nodes()[0]
 
     def ranked_nodes(self, bias: RankBias=RankBias.memory) -> [Node]:
         """Ranks the nodes in order of resource availability.

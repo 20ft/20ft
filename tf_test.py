@@ -19,9 +19,9 @@ import socket
 import random
 import os.path
 import logging
-import sys
+import shortuuid
 from concurrent.futures import ThreadPoolExecutor
-from importlib import import_module
+from tfnz import Taggable, TaggedCollection
 from tfnz.location import Location, RankBias
 from tfnz.container import Container
 from tfnz.volume import Volume
@@ -31,19 +31,21 @@ from tfnz.endpoint import Cluster
 
 class TfTest(TestCase):
     location = None
-    location_string = "tiny.20ft.nz"
-    location_cert = "~/.ssh/id_rsa"
+    location_string = "sydney.20ft.nz"
+    location_cert = "~/.ssh/aws_sydney.pem"
+    # location_string = "tiny.20ft.nz"
+    # location_cert = "~/.ssh/id_rsa"
     disable_laksa_restart = True
 
     @classmethod
     def setUpClass(cls):
-        # ensure we have all the right images
-        images = ['nginx', 'alpine', 'bitnami/apache', 'tfnz/env_test', 'tfnz/ends_test', 'debian']
-        futures = []
-        with ThreadPoolExecutor() as executor:
-            for image in images:
-                futures.append(executor.submit(subprocess.call, (['docker', 'pull', image])))
-        [f.result() for f in futures]
+        # # ensure we have all the right images
+        # images = ['nginx', 'alpine', 'bitnami/apache', 'tfnz/env_test', 'tfnz/ends_test', 'debian']
+        # futures = []
+        # with ThreadPoolExecutor() as executor:
+        #     for image in images:
+        #         futures.append(executor.submit(subprocess.call, (['docker', 'pull', image])))
+        # [f.result() for f in futures]
 
         # connect to the location
         cls.location = Location(location=cls.location_string)
@@ -70,7 +72,7 @@ class TfTest(TestCase):
         self.assertTrue(nodes[0].stats['cpu'] >= nodes[1].stats['cpu'], 'Node ranking is wrong for cpu')
 
     def test_spawn_awake(self):
-        node = TfTest.location.ranked_nodes()[0]
+        node = TfTest.location.node()
         container = node.spawn_container('bitnami/apache').wait_until_ready()
         self.assertTrue(isinstance(container, Container), 'spawn_container returned the wrong type of object')
         self.assertTrue(container.parent() == node, 'Container has the wrong parent')
@@ -86,7 +88,7 @@ class TfTest(TestCase):
         self.assertTrue(container.docker_config == ideal, 'Container launched with wrong docker config')
 
     def test_env_vars(self):
-        container = TfTest.location.ranked_nodes()[0].spawn_container('tfnz/env_test', env=[('TEST', 'testy')])
+        container = TfTest.location.node().spawn_container('tfnz/env_test', env=[('TEST', 'testy')])
         tunnel = container.wait_http_200()
 
         # did it pass the environment correctly?
@@ -98,7 +100,7 @@ class TfTest(TestCase):
 
     def test_spawn_asleep(self):
         # is it asleep?
-        container = TfTest.location.ranked_nodes()[0].spawn_container('bitnami/apache', sleep=True)
+        container = TfTest.location.node().spawn_container('bitnami/apache', sleep=True)
         time.sleep(5)  # give it a while to boot or fall over
         ps_result = container.run_process('/bin/ps ax')  # tests that we can still run processes
         self.assertTrue('sh' in ps_result[0].decode())
@@ -107,20 +109,20 @@ class TfTest(TestCase):
         # sent wrong
         preboot = ['/usr/share/nginx/html/index.html', 'Hello World!']
         try:
-            TfTest.location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
+            TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
         except ValueError:
             self.assertTrue(True)
 
         # wrong again
         preboot = [{'/usr/share/nginx/html/index.html': 'Hello World!'}]
         try:
-            TfTest.location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
+            TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
         except ValueError:
             self.assertTrue(True)
 
         # write configuration files before we boot
         preboot = [('/usr/share/nginx/html/index.html', 'Hello World!')]
-        container = TfTest.location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
+        container = TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
         self.assertTrue(b'Hello World!' in container.fetch('/usr/share/nginx/html/index.html'))
 
     def test_volumes(self):
@@ -142,7 +144,7 @@ class TfTest(TestCase):
             vol = None
 
             # catching passing the wrong object for volumes when spawning
-            node = TfTest.location.ranked_nodes()[0]
+            node = TfTest.location.node()
             try:
                 node.spawn_container('alpine', volumes=(vol2, '/mount/point'))  # deliberately wrong, don't fix!
                 self.assertTrue(False, "Did not catch spawn_container being passed the wrong object for volumes")
@@ -165,6 +167,41 @@ class TfTest(TestCase):
             if vol is not None:
                 TfTest.location.destroy_volume(vol)
             TfTest.location.destroy_volume(vol2)
+
+    def test_tagging(self):
+        # a tagged object needs a user pk even if it's only for this user
+        # has a uuid like everything else, too
+        uuid = shortuuid.uuid()
+        to = Taggable(TfTest.location.user_pk, uuid)
+        uuid2 = shortuuid.uuid()
+        to2 = Taggable(TfTest.location.user_pk, uuid2)
+
+        # the object(s) can go in a collection
+        col = TaggedCollection([to])  # constructor takes a list of initial objects
+        col.add(to2)
+
+        # fetch by uuid
+        to_out = col.get(TfTest.location.user_pk, uuid)
+        self.assertTrue(to is to_out)
+
+        # fetch by uuid, doesn't need to know the user_pk
+        # because the collection retains a list of which users created which uuid's
+        # this is necessary for the broker
+        to_out2 = col[uuid2]
+        self.assertTrue(to2 is to_out2)
+
+        # an actually tagged object
+        uuid3 = shortuuid.uuid()
+        to3 = Taggable(TfTest.location.user_pk, uuid3, tag='uuid3_tag')
+        col.add(to3)
+
+        # using a fluffy string
+        to_out3 = col.get(TfTest.location.user_pk, 'uuid3_tag')  # a string is not assumed to be a UUID
+        self.assertTrue(to3 is to_out3)
+        to_out4 = col.get(TfTest.location.user_pk, uuid3 + ':uuid3_tag')
+        self.assertTrue(to3 is to_out4)
+        to_out5 = col.get(TfTest.location.user_pk, uuid3)
+        self.assertTrue(to3 is to_out5)
 
     def test_vol_subtree(self):
         current = set()
@@ -191,7 +228,7 @@ class TfTest(TestCase):
         self.assertTrue(i5[0] == '/mount/tricky/one' and i5[1] == '/mount/tricky')
 
     def test_sftp(self):
-        node = TfTest.location.ranked_nodes()[0]
+        node = TfTest.location.node()
         ctr = node.spawn_container('alpine', sleep=True).wait_until_ready()
         ctr.create_ssh_server(2222)
 
@@ -230,7 +267,7 @@ class TfTest(TestCase):
     def test_reboot(self):
         # create a container with some preboot files
         preboot = [('/usr/share/nginx/html/index.html', b'Hello World!')]
-        container = TfTest.location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
+        container = TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
         tnl = container.wait_http_200()
 
         # Is it serving the correct file?
@@ -250,8 +287,8 @@ class TfTest(TestCase):
 
     def test_firewalling(self):
         # can we connect one container to another?
-        server = TfTest.location.ranked_nodes()[0].spawn_container('nginx')
-        client = TfTest.location.ranked_nodes()[0].spawn_container('alpine')
+        server = TfTest.location.node().spawn_container('nginx')
+        client = TfTest.location.node().spawn_container('alpine')
 
         # make the client more clienty
         client.run_process('apk update')
@@ -281,11 +318,12 @@ class TfTest(TestCase):
 
         containers = []
         for node in nodes:
-            containers.append(node.spawn_container('nginx'))
+            containers.append(node.spawn_container('alpine'))
         for container in containers:
             for target in containers:
                 if target is container:
                     continue
+                target.wait_until_ready()
                 cmd = "ping -c 1 -W 1 " + target.ip
                 stdout, stderr, exit_code = container.run_process(cmd)
                 self.assertTrue(exit_code != 0)
@@ -303,7 +341,7 @@ class TfTest(TestCase):
         ep = eps[TfTest.location_string]
 
         # create a single server cluster to serve the endpoint
-        nginx = TfTest.location.ranked_nodes()[0].spawn_container('nginx')
+        nginx = TfTest.location.node().spawn_container('nginx')
         cluster = Cluster([nginx])
 
         # attach the cluster to the endpoint
@@ -331,7 +369,7 @@ class TfTest(TestCase):
                              TfTest.location_string], shell=True)
 
             # create a single server cluster to serve the endpoint
-            nginx = TfTest.location.ranked_nodes()[0].spawn_container('nginx')
+            nginx = TfTest.location.node().spawn_container('nginx')
             cluster = Cluster([nginx])
 
             # attach the cluster to the endpoint
@@ -346,12 +384,12 @@ class TfTest(TestCase):
 
     def test_external_container(self):
         # create a server
-        server_node = TfTest.location.ranked_nodes()[0]
+        server_node = TfTest.location.node()
         server = server_node.spawn_container('nginx', advertised_tag='webserver').wait_until_ready()
 
         # create a client in a separate session
         client_session = Location(location=TfTest.location_string)
-        client_node = client_session.ranked_nodes()[0]
+        client_node = client_session.node()
         client = client_node.spawn_container('alpine').wait_until_ready()
 
         # find the server from the second session
@@ -368,7 +406,7 @@ class TfTest(TestCase):
         server_node.destroy_container(server)
 
     def test_state_tracking(self):
-        node = TfTest.location.ranked_nodes()[0]
+        node = TfTest.location.node()
 
         # containers
         before = len(node.all_containers())
@@ -437,9 +475,10 @@ class TfTest(TestCase):
         c2.destroy_tunnel(t2)
 
     def test_multiple_connect(self):
+        time.sleep(1)
         # should be banned by the geneva convention
-        locs = [Location() for n in range(0, 5)]
-        nodes = [loc.ranked_nodes()[0] for loc in locs]
+        locs = [Location() for _ in range(0, 5)]
+        nodes = [loc.node() for loc in locs]
         containers = [node.spawn_container('alpine') for node in nodes]
         self.assertTrue(True)
         for loc in locs:
@@ -452,12 +491,12 @@ class TfTest(TestCase):
         ip = TfTest.location.conn.connect_ip
         socket.create_connection((ip, 2020))
         loc = Location(location=TfTest.location_string)
-        ctr = loc.ranked_nodes()[0].spawn_container('alpine', sleep=True).wait_until_ready()  # will not return if broken
+        ctr = loc.node().spawn_container('alpine', sleep=True).wait_until_ready()  # will not return if broken
         loc.disconnect()
 
     def test_file_handling(self):
         # tests raising exceptions, too
-        container = TfTest.location.ranked_nodes()[0].spawn_container('nginx')
+        container = TfTest.location.node().spawn_container('nginx')
 
         # upload a new file
         container.put('/usr/share/nginx/html/index.html', b'Hello World')
@@ -484,7 +523,7 @@ class TfTest(TestCase):
 
     def test_spawn_process(self):
         # This test fails if noodle is running in the debugger
-        container = TfTest.location.ranked_nodes()[0].spawn_container('debian', sleep=True)
+        container = TfTest.location.node().spawn_container('debian', sleep=True)
 
         # test command styles
         r1 = container.run_process('/bin/echo Hello World')[0]
@@ -505,7 +544,7 @@ class TfTest(TestCase):
         def test_termination_callback(obj):
             self.terminated_process = obj
 
-        node = TfTest.location.ranked_nodes()[0]
+        node = TfTest.location.node()
         alpine_container = node.spawn_container('alpine').wait_until_ready()
 
         # a long lived process test asynchronous results
@@ -554,7 +593,7 @@ class TfTest(TestCase):
         def test_interactive_callback(obj, data):
             self.sh_data += data
 
-        container = TfTest.location.ranked_nodes()[0].spawn_container('alpine', sleep=True)
+        container = TfTest.location.node().spawn_container('alpine', sleep=True)
         ash = container.spawn_process('sh', data_callback=test_interactive_callback)
         time.sleep(1)
         self.sh_data = b''
@@ -570,7 +609,7 @@ class TfTest(TestCase):
         def test_terminates_callback(obj):
             self.terminate_data = obj
 
-        container = TfTest.location.ranked_nodes()[0].spawn_container('tfnz/ends_test',
+        container = TfTest.location.node().spawn_container('tfnz/ends_test',
                                                                 termination_callback=test_terminates_callback)
         time.sleep(10)
         self.assertTrue(self.terminate_data == container, "Termination callback was not called")
@@ -582,7 +621,7 @@ class TfTest(TestCase):
             return
 
         # needs automated ssh onto location to pass
-        container = TfTest.location.ranked_nodes()[0].spawn_container('tfnz/env_test')
+        container = TfTest.location.node().spawn_container('tfnz/env_test')
         tunnel = container.wait_http_200()
         reply = requests.get('http://127.0.0.1:' + str(tunnel.localport()))
         self.assertTrue('PATH' in reply.text, "Initial server reply failed")
@@ -605,7 +644,7 @@ class TfTest(TestCase):
         self.assertTrue('PATH' in reply.text, "Server did not reconnect transparently")
 
     def test_tunnels_http(self):
-        node = TfTest.location.ranked_nodes()[0]
+        node = TfTest.location.node()
         container = node.spawn_container('nginx')
 
         # creating a tunnel after http 200
@@ -634,20 +673,21 @@ class TfTest(TestCase):
 
     def test_contain_fork_bomb(self):
         self._destructive_behaviour("sh bomb.sh",
-                                    ["sh -c \"echo \'sh $0 & sh $0\' > bomb.sh\"", 'chmod +x bomb.sh'])
+                                    ["sh -c \"echo \'sh $0 & sh $0\' > bomb.sh\"", 'chmod +x bomb.sh'],
+                                    'debian')
 
     def test_contain_malloc(self):
         self._destructive_behaviour("python3 -c '[bytearray(1024) for _ in range(0, 1000000)]'",
                                     ['apk update', 'apk add python3'])
 
-    def _destructive_behaviour(self, spawn, pre_run=None):
+    def _destructive_behaviour(self, spawn, pre_run=None, image='alpine'):
         if pre_run is None:
             pre_run = []
-        node = TfTest.location.ranked_nodes()[0]
+        node = TfTest.location.node()
         logging.debug("Destructive behaviour: " + spawn)
 
         # bad container does a bad thing, does it prevent good container from booting?
-        bad_container = node.spawn_container('alpine')
+        bad_container = node.spawn_container(image)
 
         # do we have some stuff to do before we're bad?
         for cmd in pre_run:

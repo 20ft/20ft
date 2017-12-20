@@ -30,30 +30,36 @@ class Docker:
         :param conn: An optional connection to the location.
         :return: A dict representation of image metadata."""
         # try locally
+        can_connect_local = True
         try:
             r = Docker._session().get('%s/images/%s/json' % (Docker.docker_url_base, docker_image_id))
 
             # local docker works but doesn't have it
             if r.status_code == 404:
-                raise ValueError("Local docker doesn't have image: " + str(docker_image_id))
-
-            # presumably worked, cache it and return
-            obj = json.loads(r.text)
-            if conn is not None:
-                conn.send_cmd(b'cache_description', {'image_id': docker_image_id, 'description': obj})
-            return obj
+                logging.info("Local docker doesn't have image, trying for remote")
+            else:
+                # presumably worked, cache it and return
+                obj = json.loads(r.text)
+                if conn is not None:
+                    conn.send_cmd(b'cache_description', {'image_id': docker_image_id, 'description': obj})
+                return obj
         except requests.exceptions.ConnectionError:
-            pass
+            can_connect_local = False
 
         # no go locally, try remotely
+        have_description = False
         if conn is not None:
-            logging.info("Local docker not available, retrieving description: " + docker_image_id)
+            logging.info("Retrieving description: " + docker_image_id)
             msg = conn.send_blocking_cmd(b'retrieve_description', {'image_id': docker_image_id})
             if 'description' in msg.params:
                 return msg.params['description']
 
-        # if we got here then we need a functioning local Docker
-        Docker._docker_warning()
+        # image is in neither location
+        if can_connect_local:
+            raise RuntimeError("Cannot find image in either local docker or remote image cache: " + docker_image_id)
+        else:
+            # local's dead, too
+            Docker._docker_warning()
 
     @staticmethod
     def tarball(docker_image_id: str) -> bytes:
@@ -66,6 +72,7 @@ class Docker:
             return r.content
         except requests.exceptions.ConnectionError:
             Docker._docker_warning()
+
 
     @staticmethod
     def last_image() -> str:
@@ -86,7 +93,7 @@ class Docker:
     def _docker_warning():
         print("""
     Cannot (and need to) connect to the docker socket.
-
+    
     --------------------------------------
     Is docker running? You may need to run
     sudo chmod 666 /var/run/docker.sock

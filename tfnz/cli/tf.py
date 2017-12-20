@@ -209,7 +209,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # try to launch the container
     interactive = Interactive(location) if args.i else None
     try:
-        node = location.ranked_nodes()[0]
+        node = location.node()
         container = node.spawn_container(args.source,
                                          env=environment,
                                          pre_boot_files=preboot,
@@ -221,7 +221,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                                          command=args.c,
                                          sleep=args.z)
         container.wait_until_ready()  # a transport for exceptions
-    except ValueError as e:
+    except BaseException as e:
         print("Failed while spawning container: " + str(e), file=sys.stderr)
         return location
 
@@ -260,4 +260,4 @@ if __name__ == "__main__":
     maybe_location = main()
     if maybe_location is not None:
         maybe_location.disconnect()
-    exit(0)
+

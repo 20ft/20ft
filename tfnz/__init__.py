@@ -162,7 +162,7 @@ class TaggedCollection:
     def __getitem__(self, uuid):  # applies to just UUID's
         uuidkey = self.uuid_uuidkey[uuid]
         return self.objects[uuidkey]
-    
+
     def __contains__(self, uuid):
         try:
             self[uuid]  # throws if it can't get it so, yes, this does actually do something
@@ -171,10 +171,10 @@ class TaggedCollection:
             return False
 
     def __setitem__(self, key, value):
-        raise RuntimeError("Tagged collection can only be inserted with the 'add' method")
+        raise RuntimeError("Tagged collection can only be inserted to with the 'add' method")
 
     def __iter__(self):
-        raise RuntimeError("Call 'Values' on the TaggedCollection then iterate over that")
+        raise RuntimeError("Cannot iterate over a tagged collection")
 
     # what we came here for
     def add(self, obj: Taggable):
@@ -191,27 +191,21 @@ class TaggedCollection:
         if key is None:
             raise RuntimeError("Key not passed when fetching from TaggedCollection")
 
-        # if bytes are passed we'll assume it's a uuid
-        if isinstance(key, bytes):
-            try:
-                return self[(user, key)]  # uuid_key
-            except KeyError:
-                raise RuntimeError("Attempted to fetch from a TaggedCollection failed - bytes were assumed to be uuid")
+        # uuid or key or uuid:key?
+        if isinstance(key, str):
+            key = key.encode()
+        parts = key.split(b':')
+        if len(parts) > 2:
+            raise ValueError("Too many parts in tagged object: " + key)
 
-        # user:uuid:key or maybe uuid:key?
-        user, uuid, tag = (user, None, None)
-        parts = key.split(':')
-        if len(parts) == 3:
-            user, uuid, tag = parts
-        if len(parts) == 2:
-            uuid, tag = parts
-        if len(parts) == 1:
-            tag = parts[0]
-
+        # will match (user, uuid) or (user, tag)
         try:
-            return self.objects[(user, tag)]  # tag_key
+            return self.objects[(user, parts[0])]
         except KeyError:
-            raise KeyError("Failed to 'get' from a TaggedCollection with user=%s uuid=%s key=%s" % (user, uuid, tag))
+            # it seems as if we would need to searc using parts[1] but...
+            # we have both (user, uuid) and (user, tag) in the collection so it doesn't matter if we've passed
+            # uuid, uuid:tag (matches UUID), or tag
+            raise KeyError("Failed to 'get' from a TaggedCollection with user=%s key=%s" % (user, key))
 
     def remove(self, obj: Taggable):
         del self.objects[obj.uuid_key()]

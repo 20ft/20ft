@@ -17,7 +17,7 @@ from tfnz.cli import generic_cli, base_argparse
 
 
 def main():
-    parser = base_argparse('tfdomadm')
+    parser = base_argparse('tfdomains')
     subparsers = parser.add_subparsers(title='commands', dest='command')
     p_list = subparsers.add_parser('list', help='list domains')
     p_token = subparsers.add_parser('prepare', help='receive a pre-claim token')
@@ -44,7 +44,7 @@ def prepare(location, args):
     rtn = location.conn.send_blocking_cmd(b'prepare_domain', {'domain': args.prepare_domain})
     print("Put a DNS record on your domain: tf-token.%s, TXT=%s" %
           (args.prepare_domain, rtn.params['token'].decode()))
-    print("...then run: tfdomadm claim " + args.prepare_domain)
+    print("...then run: tfdomains claim " + args.prepare_domain)
     print("The request will time out (and become invalid) after six hours.")
 
 

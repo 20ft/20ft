@@ -17,7 +17,7 @@ from tfnz.cli import generic_cli, base_argparse
 
 
 def main():
-    parser = base_argparse('tfvoladm')
+    parser = base_argparse('tfvolumes')
     subparsers = parser.add_subparsers(title='commands', dest='command')
     p_list = subparsers.add_parser('list', help='list available volumes')
     p_create = subparsers.add_parser('create', help='create a volume')
@@ -41,11 +41,11 @@ def create_vol(location, args):
 
 def destroy_vol(location, args):
     try:
-        vol = location.volumes.get(args.uuid)
+        vol = location.volumes.get(location.user_pk, key=args.uuid)
         location.destroy_volume(vol)
     except KeyError:
         print("Can't find volume: " + args.uuid)
-        sys.exit(1)
+        exit(1)
 
 
 if __name__ == "__main__":
