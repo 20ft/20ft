@@ -192,9 +192,7 @@ class TaggedCollection:
             raise RuntimeError("Key not passed when fetching from TaggedCollection")
 
         # uuid or key or uuid:key?
-        if isinstance(key, str):
-            key = key.encode()
-        parts = key.split(b':')
+        parts = key.split(':')
         if len(parts) > 2:
             raise ValueError("Too many parts in tagged object: " + key)
 
