@@ -29,7 +29,7 @@ from tfnz.endpoint import Cluster
 from tfnz.cli import base_argparse, systemd, Interactive
 
 
-def main():
+def main_impl():
     # see if we have an account
     try:
         default_location(prefix="~/.20ft")
@@ -129,11 +129,6 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         location = Location(args.location, location_ip=args.local, quiet=args.q, debug_log=args.v)
     except BaseException as e:
         print("Failed while connecting to location: " + str(e), file=sys.stderr)
-        return location
-
-    # have nodes?
-    if len(location.nodes) == 0:
-        print("Location has no nodes.", file=sys.stderr)
         return location
 
     # are we making a systemd service?
@@ -256,8 +251,11 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     return location
 
 
-if __name__ == "__main__":
-    maybe_location = main()
+def main():
+    maybe_location = main_impl()
     if maybe_location is not None:
         maybe_location.disconnect()
 
+
+if __name__ == "__main__":
+    main()

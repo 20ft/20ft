@@ -116,6 +116,8 @@ class Location(Waitable):
 
         Note that the difference in processor performance is accounted for and is measured in passmarks."""
         nodes = self.nodes.values()
+        if len(nodes) == 0:
+            raise ValueError("The location has no nodes")
         if bias == RankBias.cpu:
             return sorted(nodes, key=lambda node: node.stats['cpu'], reverse=True)
         if bias == RankBias.memory:
