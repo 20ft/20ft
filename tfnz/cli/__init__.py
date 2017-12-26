@@ -189,4 +189,3 @@ class Interactive:
         self.running = False
         if self.term_attr is not None:
             termios.tcsetattr(sys.stdout.fileno(), termios.TCSANOW, self.term_attr)
-        self.location.disconnect()
