@@ -37,6 +37,22 @@ class Ssh(paramiko.ServerInterface, Waitable):
         self.process_channel = {}
         self.channel_process = {}
 
+        # get a host key
+        host_key_fname = os.path.expanduser('~/.20ft/host_key')
+        try:
+            self.host_key = paramiko.RSAKey.from_private_key_file(host_key_fname)
+        except FileNotFoundError:
+            self.host_key = paramiko.rsakey.RSAKey.generate(1024)
+            self.host_key.write_private_key_file(host_key_fname)
+
+        # a listen/accept loop
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self.sock.bind(('', self.port))
+        except OSError:
+            raise RuntimeError("Tried to start ssh server but the port was already taken: " + str(self.port))
+
     def start(self):
         # creates the run loop on a separate thread
         _thread.start_new_thread(self.run, ())
@@ -91,31 +107,16 @@ class Ssh(paramiko.ServerInterface, Waitable):
 
     ######### Controller
     def run(self):
-        # get a host key
-        host_key_fname = os.path.expanduser('~/.20ft/host_key')
-        try:
-            host_key = paramiko.RSAKey.from_private_key_file(host_key_fname)
-        except FileNotFoundError:
-            host_key = paramiko.rsakey.RSAKey.generate(1024)
-            host_key.write_private_key_file(host_key_fname)
-
-        # a listen/accept loop
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            sock.bind(('', self.port))
-        except OSError:
-            raise RuntimeError("Tried to start ssh server but the port was already taken: " + str(self.port))
-        sock.listen()
-        logging.info("SSH server listening: ssh -p %s root@localhost" % self.port)
-        self.mark_as_ready()
         while True:
+            self.sock.listen()
+            logging.info("SSH server listening: ssh -p %s root@localhost" % self.port)
+            self.mark_as_ready()
             try:
-                client, addr = sock.accept()
+                client, addr = self.sock.accept()
 
                 # wrap a transport round it
                 transport = paramiko.Transport(client)
-                transport.add_server_key(host_key)
+                transport.add_server_key(self.host_key)
                 transport.set_subsystem_handler('sftp', paramiko.SFTPServer, Sftp)
                 transport.start_server(server=self)  # for authentication
 
