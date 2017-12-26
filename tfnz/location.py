@@ -31,12 +31,6 @@ from .volume import Volume
 from .container import ExternalContainer
 
 
-class RankBias(enum.Enum):
-    """An enumeration to set priorities when ranking nodes"""
-    cpu = 0
-    memory = 1
-
-
 class Location(Waitable):
     """The root location object.
 
@@ -108,20 +102,18 @@ class Location(Waitable):
            :return: A node object"""
         return self.ranked_nodes()[0]
 
-    def ranked_nodes(self, bias: RankBias=RankBias.memory) -> [Node]:
+    def ranked_nodes(self) -> [Node]:
         """Ranks the nodes in order of resource availability.
 
-        :param bias: prioritise memory or cpu availability
         :return: A list of node objects.
 
         Note that the difference in processor performance is accounted for and is measured in passmarks."""
         nodes = self.nodes.values()
         if len(nodes) == 0:
             raise ValueError("The location has no nodes")
-        if bias == RankBias.cpu:
-            return sorted(nodes, key=lambda node: node.stats['cpu'], reverse=True)
-        if bias == RankBias.memory:
-            return sorted(nodes, key=lambda node: node.stats['memory'], reverse=True)
+        return sorted(nodes,
+                      key=lambda node: node.stats['cpu'] + node.stats['memory'] - 10 * node.stats['paging'],
+                      reverse=True)
 
     def create_volume(self, tag: str=None, async: bool=True) -> Volume:
         """Creates a new volume
@@ -209,7 +201,7 @@ class Location(Waitable):
         self.last_heartbeat = time.time()
         self.conn.send_cmd(b'heartbeat')
 
-    def _tunnel_onto(self, container, port, localport, bind) -> Tunnel:
+    def _tunnel_onto(self, container, port, localport, bind, *, timeout=30) -> Tunnel:
         # called from Container
         if isinstance(port, str):
             port = int(port)
@@ -218,7 +210,7 @@ class Location(Waitable):
 
         # create the tunnel
         container.wait_until_ready()  # otherwise the IP address may not exist on the node and creation will fail
-        tunnel = Tunnel(self.conn, container.parent(), container, port, localport, bind)
+        tunnel = Tunnel(self.conn, container.parent(), container, port, localport, bind, timeout)
         self.tunnels[tunnel.uuid] = tunnel
         tunnel.connect()  # connection done 'late' so we can get the tunnel into tunnels first
         return tunnel
@@ -233,9 +225,10 @@ class Location(Waitable):
 
         # OK
         tnl = self._tunnel_onto(container, dest_port, localport, None)
-        url = 'http://%s:%d/%s' % (fqdn, tnl.localport(), path if path is not None else '')
+        logging.debug("Tunnel connected onto: " + str(container.uuid))
 
         # poll until it's alive
+        url = 'http://%s:%d/%s' % (fqdn, tnl.localport(), path if path is not None else '')
         attempts_remaining = 60
         while True:
             try:

@@ -29,7 +29,7 @@ class Tunnel(Killable):
     Interact with the proxy through TCP (or call localport if you didn't set it explicitly).
     Note that apparently plaintext traffic through the tunnel is still encrypted on the wire."""
 
-    def __init__(self, connection, node, container, port, lp=None, bind=None):
+    def __init__(self, connection, node, container, port, lp=None, bind=None, timeout=30):
         super().__init__()
         # tell the location what we want
         self.uuid = shortuuid.uuid().encode()
@@ -42,6 +42,7 @@ class Tunnel(Killable):
         self.lp = lp
         self.bind = bind
         self.fd = None
+        self.timeout = timeout
         self.proxies = {}
         connection.register_connect_callback(self.session_reconnected)
 
@@ -67,10 +68,11 @@ class Tunnel(Killable):
         self.fd = self.socket.fileno()
         self.connection.loop.register_exclusive(self.fd, self.event, comment="listener for " + str(self))
 
-        # have the location create it's end.
+        # have the location create its end.
         self.connection.send_cmd(b'create_tunnel',
                                  {'container': self.container.uuid,
-                                  'port': self.port}, uuid=self.uuid)
+                                  'port': self.port,
+                                  'timeout': self.timeout}, uuid=self.uuid)
         logging.info("Created tunnel object: %s (%d -> %d)" % (str(self.uuid), self.lp, self.port))
 
     def localport(self) -> int:
