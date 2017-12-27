@@ -198,7 +198,11 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
             if intersection is not None:
                 print("Error in volumes: %s is a subtree of %s" % (intersection[0], intersection[1]), file=sys.stderr)
                 return location
-            volumes.append((location.volumes.get(key), mount))
+            try:
+                volumes.append((location.volumes.get(location.user_pk, key), mount))
+            except KeyError:
+                print("Could not find volume: " + key)
+                return location
             mount_points.add(mount)
 
     # try to launch the container
