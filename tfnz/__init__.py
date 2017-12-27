@@ -100,43 +100,54 @@ class Connectable:
 
 class Taggable:
     """A resource that might have a tag - namespaced by user pk."""
-    tag_re = re.compile('\A[^0-9a-z\-_.]*\Z')
-    short_uuid_re = re.compile('\A[' + shortuuid.get_alphabet() + ']{22}\Z')
+    # user, uuid and tag are all *held* as bytes
+    tag_re = re.compile(b'\A[^0-9a-z\-_.]*\Z')
+    short_uuid_re = re.compile(b'\A[' + shortuuid.get_alphabet().encode() + b']{22}\Z')
 
-    def __init__(self, user: bytes, uuid: bytes, tag: str=None):
+    def __init__(self, user: [str, bytes], uuid: [str, bytes], tag: [str, bytes]=None):
         if user is None or uuid is None:
             raise RuntimeError('Taggable resources must be constructed with at least a pk and uui')
-        self.user = user
-        self.uuid = uuid
+        if isinstance(user, str):
+            self.user = user.encode()
+        else:
+            self.user = user
+
+        if isinstance(uuid, str):
+            self.uuid = uuid.encode()
+        else:
+            self.uuid = uuid
+
         self.tag = None if tag is None else Taggable.valid_tag(tag)
 
-    def uuid_key(self):
+    def uuid_key(self) -> (bytes, bytes):
         return self.user, self.uuid
 
-    def tag_key(self):
+    def tag_key(self) -> (bytes, bytes):
         """Effectively a namespaced tag."""
         if self.tag is None:
             return None
         return self.user, self.tag
 
     @staticmethod
-    def valid_tag(tag):
+    def valid_tag(tag: [bytes, str]) -> bytes:
         """Ensure that the passed tag is at least vaguely plausible - does not check for clashes"""
         if tag is None:
             return None
         if len(tag) == 0:
             raise ValueError("Tag passed for approval was blank")
         tag = tag.lower()
+        if isinstance(tag, str):
+            tag = tag.encode()
         if Taggable.tag_re.search(tag) is not None:
             raise ValueError("Tag names can only use 0-9 a-z - _ and .")
         if Taggable.short_uuid_re.match(tag) is not None:
             raise ValueError("Tag names cannot look like UUIDs")
         return tag
 
-    def namespaced_display_name(self):
-        return self.uuid.decode() if self.tag is None else (self.uuid.decode() + ':' + self.tag)
+    def namespaced_display_name(self) -> str:
+        return self.uuid.decode() if self.tag is None else (self.uuid.decode() + ':' + self.tag.decode())
 
-    def global_display_name(self):
+    def global_display_name(self) -> str:
         return b64encode(self.user).decode() + ':' + self.namespaced_display_name()
 
 
@@ -159,11 +170,14 @@ class TaggedCollection:
     def __len__(self):
         return self.uniques
 
-    def __getitem__(self, uuid):  # applies to just UUID's
-        uuidkey = self.uuid_uuidkey[uuid]
+    def __getitem__(self, uuid: [str, bytes]) -> Taggable:  # applies to just UUID's
+        if isinstance(uuid, str):
+            uuidkey = self.uuid_uuidkey[uuid.encode()]
+        else:
+            uuidkey = self.uuid_uuidkey[uuid]
         return self.objects[uuidkey]
 
-    def __contains__(self, uuid):
+    def __contains__(self, uuid: [str, bytes]) -> bool:
         try:
             self[uuid]  # throws if it can't get it so, yes, this does actually do something
             return True
@@ -186,32 +200,37 @@ class TaggedCollection:
             self.objects[obj.tag_key()] = obj
         self.uniques += 1
 
-    def get(self, user: bytes, key):
+    def get(self, user: [bytes, str], key: [bytes, str]):
         """Fetch using an ill-defined key: uuid or tag or uuid:tag"""
         if key is None:
             raise RuntimeError("Key not passed when fetching from TaggedCollection")
+        if isinstance(user, str):
+            user = user.encode()
+        if isinstance(key, str):
+            key = key.encode()
 
         # uuid or key or uuid:key?
-        parts = key.split(':')
+        parts = key.split(b':')
         if len(parts) > 2:
-            raise ValueError("Too many parts in tagged object: " + key)
+            raise ValueError("Too many parts in tag: " + key.decode())
 
         # will match (user, uuid) or (user, tag)
         try:
             return self.objects[(user, parts[0])]
         except KeyError:
-            # it seems as if we would need to searc using parts[1] but...
+            # it seems as if we would need to search using parts[1] but...
             # we have both (user, uuid) and (user, tag) in the collection so it doesn't matter if we've passed
             # uuid, uuid:tag (matches UUID), or tag
-            raise KeyError("Failed to 'get' from a TaggedCollection with user=%s key=%s" % (user, key))
+            raise KeyError('Failed to get from a TaggedCollection with user=%s key=%s' % (user, key))
 
     def remove(self, obj: Taggable):
         del self.objects[obj.uuid_key()]
+        del self.uuid_uuidkey[obj.uuid]
         if obj.tag_key() in self.objects:
             del self.objects[obj.tag_key()]
         self.uniques -= 1
         
-    def will_clash(self, user, uuid, tag):
+    def will_clash(self, user: bytes, uuid: bytes, tag: bytes):
         if tag is not None:
             if (user, tag) in self.objects:
                 return True
