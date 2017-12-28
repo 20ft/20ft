@@ -12,7 +12,7 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 import re
 from datetime import date
-from tfnz.location import Location, RankBias
+from tfnz.location import Location
 from tfnz.volume import Volume
 
 dkim_template = '''
@@ -66,7 +66,7 @@ class Mail:
         :param local_imap: TCP port to open locally for IMAP (with SSL).
         """
         # create the container
-        node = location.ranked_nodes(RankBias.memory)[0]
+        node = location.node()
         container = node.spawn_container(self.image,
                                          volumes=[(volume, '/var/mail')],
                                          termination_callback=location.disconnect,
