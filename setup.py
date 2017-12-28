@@ -14,7 +14,7 @@
 from setuptools import setup, find_packages
 
 setup(name='tfnz',
-      version='1.2.7',
+      version='1.2.9',
       author='David Preece',
       author_email='davep@20ft.nz',
       url='https://20ft.nz',
@@ -47,8 +47,5 @@ setup(name='tfnz',
                               'tfacctbak=tfnz.cli.tfacctbak:main',
                               'tfresources=tfnz.cli.tfresources:main',
                               'tfcache=tfnz.cli.tfcache:main']
-      },
-      package_data={
-          '': ['*.1']
       }
       )
