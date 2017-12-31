@@ -15,13 +15,15 @@ import logging
 import re
 import weakref
 import shortuuid
+from messidge.client.connection import Connection
+from typing import Optional, Union, List
 from base64 import b64encode
 from _thread import allocate_lock
 
 
 class Waitable:
     """An object that can be waited on (until marked as ready)"""
-    def __init__(self, locked=True):
+    def __init__(self, locked: Optional[bool]=True):
         self.wait_lock = allocate_lock()
         self.exception = None
         if locked:
@@ -31,7 +33,7 @@ class Waitable:
         if self.wait_lock.locked():
             self.wait_lock.release()
 
-    def wait_until_ready(self, timeout=30):
+    def wait_until_ready(self, timeout: Optional[int]=30):
         """Blocks waiting for a (normally asynchronous) update indicating the object is ready.
 
         Note this also causes exceptions that would previously have been raised on the background thread
@@ -79,23 +81,23 @@ class Killable:
 
 class Connectable:
     """A resource that can be connected to in the private IP space"""
-    def __init__(self, conn, uuid, node, ip):
+    def __init__(self, conn: Connection, uuid: str, node, ip):
         self.conn = weakref.ref(conn)
         self.uuid = uuid
         self.node_pk = node if isinstance(node, bytes) else node.pk
-        self.ip = ip
+        self.ip = ip  # gets used externally, don't delete it
 
     def allow_connection_from(self, obj):
         self.conn().send_blocking_cmd(b'allow_connection', {'node': self.node_pk,
                                                             'container': self.uuid,
                                                             'ip': obj.ip})
-        logging.info("Allowed connection (from %s) on: %s" % (str(obj.uuid), str(self.uuid)))
+        logging.info("Allowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid.decode()))
 
     def disallow_connection_from(self, obj):
         self.conn().send_cmd(b'disallow_connection', {'node': self.node_pk,
                                                       'container': self.uuid,
                                                       'ip': obj.ip})
-        logging.info("Disallowed connection (from %s) on: %s" % (str(obj.uuid), str(self.uuid)))
+        logging.info("Disallowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid.decode()))
 
 
 class Taggable:
@@ -104,7 +106,7 @@ class Taggable:
     tag_re = re.compile(b'\A[^0-9a-z\-_.]*\Z')
     short_uuid_re = re.compile(b'\A[' + shortuuid.get_alphabet().encode() + b']{22}\Z')
 
-    def __init__(self, user: [str, bytes], uuid: [str, bytes], tag: [str, bytes]=None):
+    def __init__(self, user: Union[str, bytes], uuid: Union[str, bytes], tag: Optional[Union[str, bytes]]=None):
         if user is None or uuid is None:
             raise RuntimeError('Taggable resources must be constructed with at least a pk and uui')
         if isinstance(user, str):
@@ -129,7 +131,7 @@ class Taggable:
         return self.user, self.tag
 
     @staticmethod
-    def valid_tag(tag: [bytes, str]) -> bytes:
+    def valid_tag(tag: Union[bytes, str]) -> Union[bytes, None]:
         """Ensure that the passed tag is at least vaguely plausible - does not check for clashes"""
         if tag is None:
             return None
@@ -153,7 +155,7 @@ class Taggable:
 
 class TaggedCollection:
     """A collection of taggable objects"""
-    def __init__(self, initial: []=None):
+    def __init__(self, initial: Optional[List[Taggable]]=None):
         self.objects = {}
         self.uuid_uuidkey = {}
         self.uniques = 0
@@ -167,17 +169,17 @@ class TaggedCollection:
         self.objects = {}
 
     # emulating a dictionary
-    def __len__(self):
+    def __len__(self) -> int:
         return self.uniques
 
-    def __getitem__(self, uuid: [str, bytes]) -> Taggable:  # applies to just UUID's
+    def __getitem__(self, uuid: Union[str, bytes]) -> Taggable:  # applies to just UUID's
         if isinstance(uuid, str):
             uuidkey = self.uuid_uuidkey[uuid.encode()]
         else:
             uuidkey = self.uuid_uuidkey[uuid]
         return self.objects[uuidkey]
 
-    def __contains__(self, uuid: [str, bytes]) -> bool:
+    def __contains__(self, uuid: Union[str, bytes]) -> bool:
         try:
             self[uuid]  # throws if it can't get it so, yes, this does actually do something
             return True
@@ -200,7 +202,7 @@ class TaggedCollection:
             self.objects[obj.tag_key()] = obj
         self.uniques += 1
 
-    def get(self, user: [bytes, str], key: [bytes, str]):
+    def get(self, user: Union[bytes, str], key: Union[bytes, str]) -> Taggable:
         """Fetch using an ill-defined key: uuid or tag or uuid:tag"""
         if key is None:
             raise RuntimeError("Key not passed when fetching from TaggedCollection")
@@ -230,7 +232,7 @@ class TaggedCollection:
             del self.objects[obj.tag_key()]
         self.uniques -= 1
         
-    def will_clash(self, user: bytes, uuid: bytes, tag: bytes):
+    def will_clash(self, user: bytes, uuid: bytes, tag: bytes) -> bool:
         if tag is not None:
             if (user, tag) in self.objects:
                 return True

@@ -13,6 +13,7 @@
 
 import weakref
 import logging
+from typing import Optional
 from . import Killable
 
 
@@ -51,7 +52,7 @@ class Process(Killable):
                                                 'container': self.parent().uuid,
                                                 'process': self.uuid}, bulk=data)
 
-    def _internal_destroy(self, with_command=True):
+    def _internal_destroy(self, with_command: Optional[bool]=True):
         # Destroy this process
         if self.bail_if_dead():
             return
@@ -65,7 +66,7 @@ class Process(Killable):
 
         if self.termination_callback is not None:
             self.termination_callback(self)
-        logging.info("Destroyed process: " + str(self.uuid))
+        logging.info("Destroyed process: " + self.uuid.decode())
 
     def _give_me_messages(self, msg):
         if self.bail_if_dead():
@@ -73,7 +74,7 @@ class Process(Killable):
 
         # Has the process died?
         if len(msg.bulk) == 0:
-            logging.info("Terminated server side: " + str(self.uuid))
+            logging.info("Terminated server side: " + self.uuid.decode())
             self._internal_destroy(with_command=False)
             return
 

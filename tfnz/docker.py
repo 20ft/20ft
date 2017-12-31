@@ -15,6 +15,7 @@ import sys
 import requests.exceptions
 import json
 import logging
+from typing import Optional
 
 
 class Docker:
@@ -23,7 +24,7 @@ class Docker:
     session = None
 
     @staticmethod
-    def description(docker_image_id: str, conn=None) -> dict:
+    def description(docker_image_id: str, conn: Optional['Connection']=None) -> dict:
         """Describe a docker image.
 
         :param docker_image_id: Docker image id.

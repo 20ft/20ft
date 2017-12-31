@@ -15,6 +15,7 @@
 import logging
 import weakref
 import shortuuid
+from typing import List, Optional, Tuple
 from .docker import Docker
 from .container import Container
 from .volume import Volume
@@ -30,9 +31,15 @@ class Node:
         self.stats = stats  #: A dictionary of performance stats for this node. Automatically kept up to date.
         self.containers = {}  #: A uuid->object map of containers running on this node (for the current session).
 
-    def spawn_container(self, image: str, *, env: list=None, sleep: bool=False, volumes: list=None,
-                        pre_boot_files: list=None, command: str=None,
-                        stdout_callback=None, termination_callback=None, advertised_tag=None) -> Container:
+    def spawn_container(self, image: str, *,
+                        env: Optional[List[Tuple[str, str]]]=None,
+                        sleep: Optional[bool]=False,
+                        volumes: Optional[List[Tuple[Volume, str]]]=None,
+                        pre_boot_files: Optional[List[Tuple[str, bytes]]]=None,
+                        command: Optional[str]=None,
+                        stdout_callback: Optional[object]=None,
+                        termination_callback: Optional[object]=None,
+                        advertised_tag: Optional[str]=None) -> Container:
         """Asynchronously (by default) spawns a container on the node.
 
         :param image: the short image id from Docker.
@@ -97,7 +104,7 @@ class Node:
         uuid = shortuuid.uuid().encode()
         self.containers[uuid] = Container(self, image, uuid, descr, env, volumes,
                                           stdout_callback=stdout_callback, termination_callback=termination_callback)
-        logging.info("Spawning container: " + str(uuid))
+        logging.info("Spawning container: " + uuid.decode())
         cookie = {'session': self.conn().rid, 'user': self.parent().user_pk, 'tag': advertised_tag}
         self.conn().send_cmd(b'spawn_container', {'node': self.pk,
                                                   'layer_stack': layers,
@@ -120,7 +127,7 @@ class Node:
         container._internal_destroy()
         # removing from .containers and marking any volumes as being free happens in container_status_update
 
-    def all_containers(self) -> [Container]:
+    def all_containers(self) -> List[Container]:
         """Returns a list of all the containers running on this node (for *this* session)
 
         :return: A list of Container objects."""
@@ -148,7 +155,7 @@ class Node:
             return
 
         if msg.params['status'] == 'running':
-            logging.info("Container is running: " + str(msg.uuid))
+            logging.info("Container is running: " + msg.uuid.decode())
             container.ip = msg.params['ip']
             container.mark_as_ready()
             return
@@ -161,7 +168,7 @@ class Node:
                 container.termination_callback(container)
 
             del self.containers[msg.uuid]
-            logging.info("Container has exited and/or been destroyed: " + str(msg.uuid))
+            logging.info("Container has exited and/or been destroyed: " + msg.uuid.decode())
 
     def __repr__(self):
         return "<tfnz.node.Node object at %x (pk=%s containers=%d)>" % (id(self), self.pk, len(self.containers))

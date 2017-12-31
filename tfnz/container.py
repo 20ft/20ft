@@ -14,6 +14,7 @@
 import logging
 import shortuuid
 import weakref
+from typing import Optional, List, Union, Callable, Any, Tuple
 from . import Waitable, Killable, Connectable
 from .tunnel import Tunnel
 from .process import Process
@@ -23,8 +24,7 @@ from .backchannel import Backchannel
 
 class Container(Waitable, Killable, Connectable):
     """An object representing a single container. Do not instantiate directly, use node.spawn."""
-    def __init__(self, parent, image: str, uuid: str, docker_config: dict, env: [()], volumes: [()],
-                 *, stdout_callback=None, termination_callback=None):
+    def __init__(self, parent, image, uuid, docker_config, env, volumes, *, stdout_callback, termination_callback):
         Waitable.__init__(self)
         Killable.__init__(self)
         Connectable.__init__(self, parent.conn(), uuid, parent, None)
@@ -45,7 +45,7 @@ class Container(Waitable, Killable, Connectable):
         self.wait_until_ready()
         return self.ip
 
-    def stdin(self, data):
+    def stdin(self, data: bytes):
         """Writes the data into the container's stdin.
 
         :param data: The data to be written."""
@@ -55,7 +55,7 @@ class Container(Waitable, Killable, Connectable):
                                                   'container': self.uuid},
                              bulk=data)
 
-    def attach_tunnel(self, dest_port: int, localport: int=None, bind: str=None) -> Tunnel:
+    def attach_tunnel(self, dest_port: int, localport: Optional[int]=None, bind: Optional[str]=None) -> Tunnel:
         """Creates a TCP proxy between localhost and a container.
 
         :param dest_port: The TCP port on the container to connect to.
@@ -71,7 +71,8 @@ class Container(Waitable, Killable, Connectable):
         localport = dest_port if localport is None else localport
         return self.location()._tunnel_onto(self, dest_port, localport, bind)
 
-    def wait_http_200(self, dest_port: int=80, fqdn: str='localhost', path: str='', localport: int=None) -> Tunnel:
+    def wait_http_200(self, dest_port: Optional[int]=80, fqdn: Optional[str]='localhost', path: Optional[str]='') \
+            -> Tunnel:
         """Poll until an http 200 is returned.
 
         :param dest_port: Override the default port.
@@ -81,7 +82,7 @@ class Container(Waitable, Killable, Connectable):
         """
         self.ensure_alive()
         self.wait_until_ready()
-        return self.location()._wait_http_200(self, dest_port, fqdn, path, localport)
+        return self.location()._wait_http_200(self, dest_port, fqdn, path)
 
     def destroy_tunnel(self, tunnel: Tunnel):
         """Destroy a tunnel
@@ -92,7 +93,7 @@ class Container(Waitable, Killable, Connectable):
         self.ensure_alive()
         self.location()._destroy_tunnel(tunnel, container=self)
 
-    def all_tunnels(self) -> [Tunnel]:
+    def all_tunnels(self) -> List[Tunnel]:
         """Returns all the tunnels connected to this container
 
         :return: A list of Tunnel objects"""
@@ -110,24 +111,24 @@ class Container(Waitable, Killable, Connectable):
             raise ValueError("Tried to create a backchannel from the same port twice.")
         return self.backchannels[port]
 
-    def allow_connection_from(self, container):
+    def allow_connection_from(self, container: 'Container'):
         """Allow another container to call this one over private ip
 
         :param container: The container that will be allowed to call."""
         self.ensure_alive()
         self.wait_until_ready()
         super().allow_connection_from(container)
-        logging.info("Allowed connection (from %s) on: %s" % (str(container.uuid), str(self.uuid)))
 
-    def disallow_connection_from(self, container):
+    def disallow_connection_from(self, container: 'Container'):
         """Stop allowing another container to call this one over private ip
 
         :param container: The container that will no longer be allowed to call."""
         self.bail_if_dead()
         super().disallow_connection_from(container)
-        logging.info("Disallowed connection (from %s) on: %s" % (str(container.uuid), str(self.uuid)))
 
-    def spawn_process(self, remote_command: str, data_callback=None, termination_callback=None) -> Process:
+    def spawn_process(self, remote_command: str,
+                      data_callback: Optional[Callable]=None,
+                      termination_callback: Optional[Callable]=None) -> Process:
         """Spawn a process within a container, receives data asynchronously via a callback.
 
         :param remote_command: The command to remotely launch as a string (i.e. not list).
@@ -141,7 +142,7 @@ class Container(Waitable, Killable, Connectable):
         self.wait_until_ready()
 
         # Cool, go.
-        logging.info("Container (%s) spawning process: '%s'" % (self.uuid, remote_command))
+        logging.info("Container (%s) spawning process: '%s'" % (self.uuid.decode(), remote_command))
 
         # get the node to launch the process for us
         # we need the uuid of the spawn command because it's used to indicate when the process has terminated
@@ -152,7 +153,6 @@ class Container(Waitable, Killable, Connectable):
                                                 'command': remote_command},
                              uuid=spawn_command_uuid,
                              reply_callback=self._process_callback)
-        logging.info("Spawned process: " + spawn_command_uuid.decode())
         return self.processes[spawn_command_uuid]
 
     def run_process(self, remote_command: str) -> (bytes, bytes, str):
@@ -167,7 +167,7 @@ class Container(Waitable, Killable, Connectable):
         self.wait_until_ready()
 
         # Cool, go.
-        logging.info("Container (%s) running process: %s..." % (self.uuid, remote_command[:20]))
+        logging.info("Container (%s) running process: '%s'" % (self.uuid.decode(), remote_command))
 
         # get the node to launch the process for us
         # we need the uuid of the spawn command because it's used to indicate when the process has terminated
@@ -178,7 +178,10 @@ class Container(Waitable, Killable, Connectable):
             raise ValueError("Blocking process failed: " + remote_command)
         return msg.params['stdout'], msg.params['stderr'], msg.params['exit_code']
 
-    def spawn_shell(self, data_callback=None, termination_callback=None, echo: bool=False) -> Process:
+    def spawn_shell(self,
+                    data_callback: Optional[Callable]=None,
+                    termination_callback: Optional[Callable]=None,
+                    echo: bool=False) -> Process:
         """Spawn a shell within a container, expose as a process
 
         :param data_callback: A callback for arriving data - signature (object, bytes).
@@ -223,12 +226,12 @@ class Container(Waitable, Killable, Connectable):
         process._internal_destroy()
         del self.processes[process.uuid]
 
-    def all_processes(self) -> [Process]:
+    def all_processes(self) -> List[Process]:
         """Returns all the processes (that were manually launched) running on this container.
 
         :return: A list of Process objects"""
         self.ensure_alive()
-        return self.processes.values()
+        return list(self.processes.values())
 
     def fetch(self, filename: str) -> bytes:
         """Fetch a single file from the container.
@@ -258,7 +261,7 @@ class Container(Waitable, Killable, Connectable):
                                                     'container': self.uuid,
                                                     'filename': filename}, bulk=data)
 
-    def reboot(self, reset_filesystem: bool=False):
+    def reboot(self, reset_filesystem: Optional[bool]=False):
         """Synchronously reboot a container, optionally resetting the filesystem.
 
         :param reset_filesystem: Reset the container's filesystem to its 'as booted' state."""
@@ -274,7 +277,7 @@ class Container(Waitable, Killable, Connectable):
                                                    'container': self.uuid,
                                                    'reset_filesystem': reset_filesystem},
                              reply_callback=self.parent()._container_status_update)
-        logging.info("Restarting container: " + str(self.uuid))
+        logging.info("Restarting container: " + self.uuid.decode())
         self.wait_until_ready()
 
     def _internal_destroy(self):
@@ -297,7 +300,7 @@ class Container(Waitable, Killable, Connectable):
         self.conn().send_cmd(b'destroy_container', {'node': self.parent().pk,
                                                     'container': self.uuid})
         self.mark_as_dead()
-        logging.info("Destroying container: " + str(self.uuid))
+        logging.info("Destroying container: " + self.uuid.decode())
 
     def _process_callback(self, msg):
         if self.bail_if_dead():
@@ -307,7 +310,7 @@ class Container(Waitable, Killable, Connectable):
             logging.debug("Message arrived for an unknown process: " + str(msg.uuid))
             return
 
-        logging.debug("Received data from process: " + str(msg.uuid))
+        logging.debug("Received data from process: " + msg.uuid.decode())
         self.processes[msg.uuid]._give_me_messages(msg)
 
     def __repr__(self):
@@ -317,5 +320,5 @@ class Container(Waitable, Killable, Connectable):
 class ExternalContainer(Connectable):
     """An object representing a container managed by another session (and the same user) but advertised using a tag"""
 
-    def __init__(self, conn, uuid, node, ip):
+    def __init__(self, conn: 'Connection', uuid: str, node: Union['Node', bytes], ip):
         super().__init__(conn, uuid, node, ip)

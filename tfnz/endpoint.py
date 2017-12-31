@@ -13,13 +13,14 @@
 
 import weakref
 import logging
+from typing import List, Optional, Tuple
 from tfnz.container import Container
 
 
 class Cluster:
     """An object representing a collection of containers, load balanced and published to an endpoint"""
 
-    def __init__(self, containers: [Container], rewrite: str=None):
+    def __init__(self, containers: List[Container], rewrite: Optional[str]=None):
         self.uuid = None
         self.containers = {}
         self.rewrite = rewrite
@@ -42,14 +43,14 @@ class Cluster:
 class WebEndpoint:
     """An HTTP proxy that can expose a number of clusters"""
 
-    def __init__(self, conn, domain: str):
+    def __init__(self, conn: 'Connection', domain: str):
         """Do not construct directly, see location.endpoints"""
         self.conn = weakref.ref(conn)
         self.domain = domain
         self.domainchars = len(domain)
         self.clusters = {}  # uuid to cluster
 
-    def publish(self, cluster: Cluster, fqdn: str, *, ssl=None):
+    def publish(self, cluster: Cluster, fqdn: str, *, ssl: Optional[Tuple]=None):
         # checks
         if not fqdn.endswith(self.domain):
             raise ValueError("Web endpoint for (%s) cannot publish: %s" % (self.domain, fqdn))
@@ -76,14 +77,14 @@ class WebEndpoint:
                                                              'rewrite': cluster.rewrite,
                                                              'ssl': combined,
                                                              'containers': list(cluster.uuids())})
-        logging.info("Published (%s) at: %s" % (msg.uuid, subdomain + self.domain))
+        logging.info("Published (%s) at: %s" % (msg.uuid.decode(), subdomain + self.domain))
         cluster.uuid = msg.uuid
         self.clusters[msg.uuid] = cluster
         return msg.uuid
 
-    def unpublish(self, cluster):
+    def unpublish(self, cluster: Cluster):
         self.conn().send_cmd(b'unpublish_web', {'uuid': cluster.uuid})
-        logging.info("Unpublished: " + str(cluster.uuid))
+        logging.info("Unpublished: " + cluster.uuid.decode())
         del self.clusters[cluster.uuid]
 
     def __repr__(self):

@@ -44,14 +44,10 @@ class Tunnel(Killable):
         self.fd = None
         self.timeout = timeout
         self.proxies = {}
-        connection.register_connect_callback(self.session_reconnected)
+        connection.register_connect_callback(self._session_reconnected)
 
     def __del__(self):
         self.destroy()  # bails if destroyed already
-
-    def session_reconnected(self, rid):
-        logging.debug("Tunnel reset its session id: " + str(self.uuid))
-        self.sess = rid
 
     def connect(self):
         self.ensure_alive()
@@ -73,7 +69,7 @@ class Tunnel(Killable):
                                  {'container': self.container.uuid,
                                   'port': self.port,
                                   'timeout': self.timeout}, uuid=self.uuid)
-        logging.info("Created tunnel object: %s (%d -> %d)" % (str(self.uuid), self.lp, self.port))
+        logging.info("Created tunnel object: %s (%d -> %d)" % (self.uuid.decode(), self.lp, self.port))
 
     def localport(self) -> int:
         """Returns the (possibly dynamically allocated) local port number.
@@ -87,7 +83,7 @@ class Tunnel(Killable):
         if self.bail_if_dead():
             return
         self.mark_as_dead()
-        self.connection.unregister_connect_callback(self.session_reconnected)
+        self.connection.unregister_connect_callback(self._session_reconnected)
 
         for proxy in list(self.proxies.items()):
             self.connection.loop.unregister_exclusive(proxy[0])
@@ -97,7 +93,7 @@ class Tunnel(Killable):
         self.socket.close()
         self.socket = None
         self.connection.send_cmd(b'destroy_tunnel', {"tunnel": self.uuid})
-        logging.info("Destroyed tunnel: " + str(self.uuid))
+        logging.info("Destroyed tunnel: " + self.uuid.decode())
 
     def event(self, localfd):
         # An event on the connection itself
@@ -155,7 +151,7 @@ class Tunnel(Killable):
             proxy_fd = msg.params['proxy']
         except KeyError:
             # a blank message with no proxy id is to let us know it constructed server side
-            logging.debug("From proxy message with no proxy, marking tunnel as ready: " + str(self.uuid))
+            logging.debug("From proxy message with no proxy, marking tunnel as ready: " + self.uuid.decode())
             return
 
         if msg.command == 'close_proxy':
@@ -184,6 +180,10 @@ class Tunnel(Killable):
             logging.debug("Closed proxy connection, fd: " + str(fd))
         except KeyError:
             pass  # proxy has already gone away
+
+    def _session_reconnected(self, rid):
+        logging.debug("Tunnel reset its session id: " + self.uuid.decode())
+        self.sess = rid
 
     def __repr__(self):
         return "<tfnz.tunnel.Tunnel object at %x (uuid=%s port=%d)>" % \

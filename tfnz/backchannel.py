@@ -19,7 +19,7 @@ import weakref
 class Backchannel:
     """Creates a non-parallel tunnel from the given port inside the container (bound to localhost)"""
 
-    def __init__(self, ctr, port, conn):
+    def __init__(self, ctr: 'Container', port: int, conn: 'Connection'):
         self.ctr = weakref.ref(ctr)
         self.conn = weakref.ref(conn)
         self.port = port

@@ -143,7 +143,7 @@ class Ssh(paramiko.ServerInterface, Waitable):
             channel = self.process_channel[obj]
             channel.sendall(data)
         except (OSError, KeyError):
-            logging.debug("A bad thing")
+            logging.debug("A bad thing happened while receiving ssh data")
 
     def event(self, skt):
         # from 'our' side

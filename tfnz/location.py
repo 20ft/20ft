@@ -11,12 +11,11 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-import enum
 import logging
 import socket
 import time
 import requests
-from base64 import b64decode
+from typing import Union, List, Optional
 from subprocess import run, CalledProcessError, DEVNULL
 from requests.exceptions import ConnectionError
 from messidge import default_location
@@ -40,8 +39,8 @@ class Location(Waitable):
         :param debug_log: Set true to log at DEBUG logging level.
         """
 
-    def __init__(self, location: str=None, *, location_ip: str=None,
-                 quiet: bool=False, debug_log: bool=False):
+    def __init__(self, location: Optional[str]=None, *, location_ip: Optional[str]=None,
+                 quiet: Optional[bool]=False, debug_log: Optional[bool]=False):
         super().__init__()
 
         # collect parameters
@@ -79,7 +78,7 @@ class Location(Waitable):
         self.wait_until_ready()  # doesn't return until a resource offer is made
         self.conn.loop.register_on_idle(self._heartbeat)
 
-    def disconnect(self, container=None):
+    def disconnect(self):
         """Disconnect from the location - without calling this the object cannot be garbage collected"""
         # the container is passed if you use 'disconnect' as a termination function on a container
         # i.e. it needs to be there, don't take it off!
@@ -96,13 +95,13 @@ class Location(Waitable):
         self.conn = None
         self.nodes.clear()
 
-    def node(self,) -> [Node]:
+    def node(self) -> Node:
         """Returns a node.
 
            :return: A node object"""
         return self.ranked_nodes()[0]
 
-    def ranked_nodes(self) -> [Node]:
+    def ranked_nodes(self) -> List[Node]:
         """Ranks the nodes in order of resource availability.
 
         :return: A list of node objects.
@@ -115,7 +114,7 @@ class Location(Waitable):
                       key=lambda node: node.stats['cpu'] + node.stats['memory'] - 10 * node.stats['paging'],
                       reverse=True)
 
-    def create_volume(self, tag: str=None, async: bool=True) -> Volume:
+    def create_volume(self, tag: Optional[str]=None, async: Optional[bool]=True) -> Volume:
         """Creates a new volume
 
         :param tag: A globally visible tag (to make the volume globally visible).
@@ -128,7 +127,7 @@ class Location(Waitable):
         msg = self.conn.send_blocking_cmd(b'create_volume', {'user': self.user_pk,
                                                              'tag': tag,
                                                              'async': async})
-        logging.info("Created volume: " + str(msg.uuid))
+        logging.info("Created volume: " + msg.uuid.decode())
         vol = Volume(self, msg.uuid, tag)
         self.volumes.add(vol)
         return vol
@@ -141,23 +140,23 @@ class Location(Waitable):
             raise TypeError()
         self.conn.send_blocking_cmd(b'destroy_volume', {'user': self.user_pk,
                                                         'volume': volume.uuid})
-        logging.info("Destroyed volume: " + str(volume.uuid))
+        logging.info("Destroyed volume: " + volume.uuid.decode())
         self.volumes.remove(volume)
 
-    def all_volumes(self) -> [Volume]:
+    def all_volumes(self) -> List[Volume]:
         """Returns a list of all volumes on this node.
 
         :return: A list of Volume objects."""
         return list(self.volumes.values())
 
-    def volume(self, key) -> Volume:
+    def volume(self, key: Union[bytes, str]) -> Volume:
         """Return the volume with this uuid, tag or display_name.
 
         :param key: The uuid or tag of the volume object to be returned.
         :return: A Volume object."""
         return self.volumes.get(self.user_pk, key)
 
-    def endpoint_for(self, fqdn) -> WebEndpoint:
+    def endpoint_for(self, fqdn: str) -> WebEndpoint:
         """Return a WebEndpoint for the given fqdn.
 
         :param fqdn: The fully qualified name the endpoint will represent.
@@ -167,7 +166,7 @@ class Location(Waitable):
                 return ep
         raise ValueError("There is no endpoint capable of serving: " + fqdn)
 
-    def container_for(self, tag) -> ExternalContainer:
+    def container_for(self, tag: Union[bytes, str]) -> ExternalContainer:
         """Return a connection onto a container owned by another session, but advertised through a tag.
 
         :param tag: The tag the container was created with.
@@ -175,7 +174,7 @@ class Location(Waitable):
         msg = self.conn.send_blocking_cmd(b'find_tag', {'tag': tag})
         return ExternalContainer(self.conn, msg.params['uuid'], msg.params['node'], msg.params['ip'])
 
-    def ensure_image_uploaded(self, docker_image_id: str, descr: dict=None):
+    def ensure_image_uploaded(self, docker_image_id: str, descr: Optional[dict]=None):
         """Sends missing docker layers to the location.
 
         :param docker_image_id: use the short form id or name:tag
@@ -221,11 +220,11 @@ class Location(Waitable):
         addr = socket.gethostbyname(fqdn)
         if addr != '127.0.0.1':
             raise ValueError("FQDN '%s' does not resolve to localhost" % fqdn)
-        logging.info("Waiting on http 200: " + str(container.uuid))
+        logging.info("Waiting on http 200: " + container.uuid.decode())
 
         # OK
         tnl = self._tunnel_onto(container, dest_port, localport, None)
-        logging.debug("Tunnel connected onto: " + str(container.uuid))
+        logging.debug("Tunnel connected onto: " + container.uuid.decode())
 
         # poll until it's alive
         url = 'http://%s:%d/%s' % (fqdn, tnl.localport(), path if path is not None else '')
@@ -273,7 +272,7 @@ class Location(Waitable):
 
     def _update_stats(self, msg):
         if msg.params['node'] not in self.nodes:
-            logging.debug("Received updated stats from a node we didn't know existed: " + str(msg.params['node']))
+            logging.debug("Received updated stats from a node we didn't know existed: " + msg.params['node'].decode())
             return
         node = self.nodes[msg.params['node']]
         node._update_stats(msg.params['stats'])
