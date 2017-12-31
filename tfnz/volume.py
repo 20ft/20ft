@@ -18,7 +18,7 @@ from . import Taggable
 
 
 class Volume(Taggable):
-    def __init__(self, location, uuid, tag=None):
+    def __init__(self, location, uuid, tag):
         super().__init__(location.user_pk, uuid, tag)
         # Do not construct directly, use Location.create_volume
         self.connection = weakref.ref(location.conn)
@@ -26,12 +26,12 @@ class Volume(Taggable):
     def snapshot(self):
         """Mark the current state of the volume as being it's initial state."""
         self.connection().send_cmd(b'snapshot_volume', {'volume': self.uuid})
-        logging.info("Set snapshot for volume: " + str(self.uuid))
+        logging.info("Set snapshot for volume: " + self.uuid.decode())
 
     def rollback(self):
         """Resets the volume back to the initial state."""
         self.connection().send_cmd(b'rollback_volume', {'volume': self.uuid})
-        logging.info("Rolled back to snapshot: " + str(self.uuid))
+        logging.info("Rolled back to snapshot: " + self.uuid.decode())
 
     @staticmethod
     def trees_intersect(current, proposed):
