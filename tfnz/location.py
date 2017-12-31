@@ -16,6 +16,7 @@ import socket
 import time
 import requests
 from typing import Union, List, Optional
+from base64 import b64encode
 from subprocess import run, CalledProcessError, DEVNULL
 from requests.exceptions import ConnectionError
 from messidge import default_location
@@ -272,7 +273,8 @@ class Location(Waitable):
 
     def _update_stats(self, msg):
         if msg.params['node'] not in self.nodes:
-            logging.debug("Received updated stats from a node we didn't know existed: " + msg.params['node'].decode())
+            logging.debug("Received updated stats from a node we didn't know existed: " +
+                          b64encode(msg.params['node']).decode())
             return
         node = self.nodes[msg.params['node']]
         node._update_stats(msg.params['stats'])
