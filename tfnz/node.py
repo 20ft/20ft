@@ -15,6 +15,7 @@
 import logging
 import weakref
 import shortuuid
+from base64 import b64encode
 from typing import List, Optional, Tuple
 from .docker import Docker
 from .container import Container
@@ -136,7 +137,7 @@ class Node:
     def _update_stats(self, stats):
         # the node telling us it's current resource state
         self.stats = stats
-        logging.debug("Stats updated for node: " + str(self.pk))
+        logging.debug("Stats updated for node: " + b64encode(self.pk).decode())
 
     def _container_status_update(self, msg):
         try:

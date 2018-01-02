@@ -33,22 +33,22 @@ class TfTest(TestCase):
     location = None
     location_string = "sydney.20ft.nz"
     location_cert = "~/.ssh/aws_sydney.pem"
-    # location_string = "tiny.20ft.nz"
+    # location_string = "tiny"
     # location_cert = "~/.ssh/id_rsa"
     disable_laksa_restart = True
 
     @classmethod
     def setUpClass(cls):
         # ensure we have all the right images
-        # images = ['nginx', 'alpine', 'bitnami/apache', 'tfnz/env_test', 'tfnz/ends_test', 'debian']
-        # futures = []
-        # with ThreadPoolExecutor() as executor:
-        #     for image in images:
-        #         futures.append(executor.submit(subprocess.call, (['docker', 'pull', image])))
-        # [f.result() for f in futures]
+        images = ['nginx', 'alpine', 'bitnami/apache', 'tfnz/env_test', 'tfnz/ends_test', 'debian']
+        futures = []
+        with ThreadPoolExecutor() as executor:
+            for image in images:
+                futures.append(executor.submit(subprocess.call, (['docker', 'pull', image])))
+        [f.result() for f in futures]
 
         # connect to the location
-        cls.location = Location(location=cls.location_string)
+        cls.location = Location(location=cls.location_string, debug_log=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -224,13 +224,13 @@ class TfTest(TestCase):
     def test_sftp(self):
         node = TfTest.location.node()
         ctr = node.spawn_container('alpine', sleep=True).wait_until_ready()
-        port = 2222
+        port = random.randrange(1024, 8192)
         while True:
             try:
                 ctr.create_ssh_server(port)
                 break
             except RuntimeError:
-                port += 1
+                port += random.randrange(1024, 8192)
 
         def sftp_op(command, port):
             sftp = subprocess.Popen(['/usr/bin/sftp',
@@ -486,16 +486,16 @@ class TfTest(TestCase):
         # cleaning
         c2.destroy_tunnel(t2)
 
-    # def test_multiple_connect(self):
-    #     # should be banned by the geneva convention
-    #     locs = [Location() for _ in range(0, 5)]
-    #     nodes = [loc.node() for loc in locs]
-    #     containers = [node.spawn_container('alpine') for node in nodes]
-    #     self.assertTrue(True)
-    #     for loc in locs:
-    #         loc.disconnect()
-    #     containers.clear()
-    #     locs.clear()
+    def test_multiple_connect(self):
+        # should be banned by the geneva convention
+        locs = [Location() for _ in range(0, 5)]
+        nodes = [loc.node() for loc in locs]
+        containers = [node.spawn_container('alpine') for node in nodes]
+        self.assertTrue(True)
+        for loc in locs:
+            loc.disconnect()
+        containers.clear()
+        locs.clear()
 
     def test_portscan_connect(self):
         # something somewhere is messing with our socket
@@ -662,17 +662,6 @@ class TfTest(TestCase):
         tnl = container.wait_http_200()
         reply = requests.get('http://127.0.0.1:' + str(tnl.localport()))
         self.assertTrue('Welcome to nginx!' in reply.text, 'Did not get the expected reply from container')
-
-        # being a pain about it
-        tunnels = []
-        for i in range(0, 10):
-            if random.randint(0, 1) == 0:
-                container.attach_tunnel(80)
-            else:
-                tunnels = container.all_tunnels()
-                if len(tunnels) != 0:
-                    idx = random.randint(0, len(tunnels) - 1)
-                    container.destroy_tunnel(tunnels[idx])
 
         node.destroy_container(container)
 

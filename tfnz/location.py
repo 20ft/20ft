@@ -196,7 +196,7 @@ class Location(Waitable):
         return layers
 
     def _heartbeat(self):
-        if time.time() - self.last_heartbeat < 60:
+        if time.time() - self.last_heartbeat < 30:
             return
         self.last_heartbeat = time.time()
         self.conn.send_cmd(b'heartbeat')
