@@ -2,21 +2,21 @@
 Quick Start
 ===========
 
-To ready a computer for being a 20ft development client, `install Docker <https://store.docker.com/search?type=edition&offering=community>`_ then choose one of the following...
+To ready a computer for being a 20ft development client, `install Docker <https://store.docker.com/search?type=edition&offering=community>`_ then choose which platform to install on - Docker or Python 3. Installing on Docker is simplest but (especially on mac) may prove to have worse performance; Installing into Python 3 needs a Python 3 environment on the development machine, but should prove to be faster. Note that for any advanced development you will be needing a Python 3 environment anyway.
 
-**macOS/Linux** Install with ``curl -s https://20ft.nz/nix | bash``.
+**For Docker** Install with ``curl -s https://20ft.nz/docker | sh``.
 
-**Python 3** Ensure you have pip3 installed then run ``pip3 install tfnz`` - you may need ``sudo -H pip3 install tfnz`` depending on your platform.
+**For Python 3** Ensure you have pip3 installed then run ``pip3 install tfnz``.
 
-Then create an account with the command sent with your invite email.
+Create an account with the command sent with your invite email. Man pages can be installed for either platform with ``curl -s https://20ft.nz/docker | sh``
 
 
 Your First Container
 ====================
 
-Running nginx is the hello world of container orchestration. Launch your first container with ``tf -p 8080:80 nginx``. This will...
+Running nginx is the hello world of containers. Launch your first container with ``tf -p 8080:80 nginx``. This will...
 
-* Connect to the default location (in this case "tiny") and set up an encrypted tunnel.
+* Connect to the default location (in this case "tiny.20ft.nz") and set up an encrypted tunnel.
 * Receive a list of resources we can use.
 * Ensure all the layers for the nginx image have been uploaded.
 * Spawn a container from the nginx image.
@@ -103,4 +103,4 @@ Many images have a shell as their application. Using the ``-i`` flag we can conn
     1114191353.335 INFO     Disconnecting
     1114191353.335 INFO     Container has exited and/or been destroyed: b'GyYjWRVKjYpUk6HEAB5VoP'
 
-The treatment of the tty in this mode is a little simplistic, and a better result can be had by running with the ``-s`` flag and then ssh'ing into the container with ``ssh -p 2222 root@localhost``.
+The treatment of the tty in this mode is a little simplistic, and a better result can be had by running with ``--ssh 2222`` flag and then ssh'ing into the container with ``ssh -p 2222 root@localhost``.

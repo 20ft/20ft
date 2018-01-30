@@ -10,7 +10,7 @@ chmod +x /usr/local/bin/tf
 curl -s https://20ft.nz/tf.1 > /usr/local/share/man/man1/tf.1
 
 # create 'child' scripts
-apps=(tfvolumes tfdomains tfacctbak tfresources tfcache)
+apps=(tfvolumes tfdomains tfacctbak tfresources tfcache tfdescribe)
 for app in ${apps[*]}; do
 	ln -f -s /usr/local/bin/tf  /usr/local/bin/$app
 	curl -s https://20ft.nz/$app.1 > /usr/local/share/man/man1/$app.1

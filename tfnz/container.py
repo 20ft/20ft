@@ -18,8 +18,7 @@ from typing import Optional, List, Union, Callable, Any, Tuple
 from . import Waitable, Killable, Connectable
 from .tunnel import Tunnel
 from .process import Process
-from .ssh import Ssh
-from .backchannel import Backchannel
+from .ssh import SshServer
 
 
 class Container(Waitable, Killable, Connectable):
@@ -32,7 +31,7 @@ class Container(Waitable, Killable, Connectable):
         self.location = weakref.ref(self.parent().parent())
         self.image = image
         self.processes = {}
-        self.backchannels = {}  # port to object
+        self.ssh_servers = {}
         self.docker_config = docker_config
         self.env = env
         self.volumes = volumes
@@ -98,18 +97,7 @@ class Container(Waitable, Killable, Connectable):
 
         :return: A list of Tunnel objects"""
         self.ensure_alive()
-        return [t for t in self.location().tunnels.values() if t.container == self]
-
-    def create_backchannel(self, port: int):
-        """Creates a non-parallel forwarded tcp connection from the container to localhost.
-
-        :param port: The port number of the server on this machine."""
-        # backchannel creates a process so we don't track them separately
-        if port not in self.backchannels:
-            self.backchannels[port] = Backchannel(self, port, self.conn())
-        else:
-            raise ValueError("Tried to create a backchannel from the same port twice.")
-        return self.backchannels[port]
+        return [t for t in self.location().tunnels.values() if t.container() == self]
 
     def allow_connection_from(self, container: 'Container'):
         """Allow another container to call this one over private ip
@@ -123,17 +111,20 @@ class Container(Waitable, Killable, Connectable):
         """Stop allowing another container to call this one over private ip
 
         :param container: The container that will no longer be allowed to call."""
-        self.bail_if_dead()
+        if self.bail_if_dead():
+            return
         super().disallow_connection_from(container)
 
     def spawn_process(self, remote_command: str,
                       data_callback: Optional[Callable]=None,
-                      termination_callback: Optional[Callable]=None) -> Process:
+                      termination_callback: Optional[Callable]=None,
+                      stderr_callback: Optional[Callable]=None) -> Process:
         """Spawn a process within a container, receives data asynchronously via a callback.
 
         :param remote_command: The command to remotely launch as a string (i.e. not list).
         :param data_callback: A callback for arriving data - signature (object, bytes).
-        :param termination_callback: For when the process completes - signature (object).
+        :param termination_callback: For when the process completes - signature (object), returncode.
+        :param stderr_callback: For data emitted by the process's stderr stream - signature (object, bytes).
         :return: A Process object.
         """
         if isinstance(remote_command, list):
@@ -147,18 +138,26 @@ class Container(Waitable, Killable, Connectable):
         # get the node to launch the process for us
         # we need the uuid of the spawn command because it's used to indicate when the process has terminated
         spawn_command_uuid = shortuuid.uuid().encode()
-        self.processes[spawn_command_uuid] = Process(self, spawn_command_uuid, data_callback, termination_callback)
+        self.processes[spawn_command_uuid] = Process(self, spawn_command_uuid,
+                                                     data_callback,
+                                                     termination_callback,
+                                                     stderr_callback)
         self.conn().send_cmd(b'spawn_process', {'node': self.parent().pk,
                                                 'container': self.uuid,
                                                 'command': remote_command},
                              uuid=spawn_command_uuid,
                              reply_callback=self._process_callback)
+        logging.info("...process id: " + spawn_command_uuid.decode())
         return self.processes[spawn_command_uuid]
 
-    def run_process(self, remote_command: str) -> (bytes, bytes, str):
+    def run_process(self, remote_command: str, *,
+                    data_callback: Optional[Callable]=None,
+                    stderr_callback: Optional[Callable]=None) -> (bytes, bytes, str):
         """Run a process once, synchronously, without pty.
 
         :param remote_command: The command to run remotely.
+        :param data_callback: A callback for arriving data - signature (object, bytes).
+        :param stderr_callback: For data emitted by the process's stderr stream - signature (object, bytes).
         :return: stdout from the process, stderr from the process, exit code (as string).
         """
         if isinstance(remote_command, list):
@@ -176,6 +175,10 @@ class Container(Waitable, Killable, Connectable):
                                                              'command': remote_command})
         if msg is None:
             raise ValueError("Blocking process failed: " + remote_command)
+        if data_callback is not None and len(msg.params['stdout']) > 0:
+            data_callback(self, msg.params['stdout'])
+        if stderr_callback is not None and len(msg.params['stderr']) > 0:
+            stderr_callback(self, msg.params['stderr'])
         return msg.params['stdout'], msg.params['stderr'], msg.params['exit_code']
 
     def spawn_shell(self,
@@ -185,7 +188,7 @@ class Container(Waitable, Killable, Connectable):
         """Spawn a shell within a container, expose as a process
 
         :param data_callback: A callback for arriving data - signature (object, bytes).
-        :param termination_callback: For when the process completes - signature (object).
+        :param termination_callback: For when the process completes - signature (object, returncode).
         :param echo: Whether or not the shell echoes input.
         :return: A Process object."""
         self.ensure_alive()
@@ -203,17 +206,6 @@ class Container(Waitable, Killable, Connectable):
         logging.info("Spawned shell: " + spawn_command_uuid.decode())
         return self.processes[spawn_command_uuid]
 
-    def create_ssh_server(self, port: int=2222) -> Ssh:
-        """Create an ssh/sftp server on the given port.
-
-        :param port: Local tcp port number
-        :return: An Ssh object."""
-        self.ensure_alive()
-        self.wait_until_ready()
-        s = Ssh(self, port)
-        s.start()
-        return s
-
     def destroy_process(self, process: Process):
         """Destroy a process
 
@@ -221,9 +213,9 @@ class Container(Waitable, Killable, Connectable):
         if not isinstance(process, Process):
             raise TypeError()
         self.ensure_alive()
-        if process not in self.processes.values():
-            raise ValueError("Process does not belong to this container")
-        process._internal_destroy()
+        if process.uuid not in self.processes:
+            raise ValueError("Process is not apparently a child of this container")
+        process.destroy()
         del self.processes[process.uuid]
 
     def all_processes(self) -> List[Process]:
@@ -232,6 +224,30 @@ class Container(Waitable, Killable, Connectable):
         :return: A list of Process objects"""
         self.ensure_alive()
         return list(self.processes.values())
+
+    def create_ssh_server(self, port: int=2222) -> SshServer:
+        """Create an ssh/sftp server on the given port.
+
+        :param port: Local tcp port number
+        :return: An SshServer object."""
+        self.ensure_alive()
+        self.wait_until_ready()
+        s = SshServer(self, port)
+        s.start()
+        self.ssh_servers[s.uuid] = s
+        return s
+
+    def destroy_ssh_server(self, server):
+        """Destroy an ssh/sftp server than belongs to this container.
+
+        :param server: An SshServer object."""
+        self.ensure_alive()
+        if not isinstance(server, SshServer):
+            raise TypeError()
+        if server.uuid not in self.ssh_servers:
+            raise ValueError("Server does not belong to this container")
+        server.stop()
+        del self.ssh_servers[server.uuid]
 
     def fetch(self, filename: str) -> bytes:
         """Fetch a single file from the container.
@@ -269,15 +285,14 @@ class Container(Waitable, Killable, Connectable):
             raise RuntimeError("Tried to restart a container but it has already been removed from the node")
         self.ensure_alive()
         self.wait_until_ready()  # in this case means it has been configured, prepared etc. once already
-        self.backchannels.clear()  # will need recreating if needed because they are effectively processes
 
         # Restart
+        logging.info("Restarting container: " + self.uuid.decode())
         self.mark_not_ready()  # so calls are forced to wait until the container reports it has rebooted
         self.conn().send_cmd(b'reboot_container', {'node': self.parent().pk,
                                                    'container': self.uuid,
                                                    'reset_filesystem': reset_filesystem},
                              reply_callback=self.parent()._container_status_update)
-        logging.info("Restarting container: " + self.uuid.decode())
         self.wait_until_ready()
 
     def _internal_destroy(self):
@@ -286,15 +301,14 @@ class Container(Waitable, Killable, Connectable):
             return
         self.ensure_alive()
         self.wait_until_ready()
-        self.backchannels.clear()
 
         # Fake the processes being destroyed (they will be anyway)
         for proc in list(self.processes.values()):
-            proc._internal_destroy(with_command=False)
+            proc.destroy(with_command=False)
 
         # Destroy any tunnels
         for tun in self.all_tunnels():
-            self.location()._destroy_tunnel(tun, self)
+            self.location()._destroy_tunnel(tun, self, with_command=False)
 
         # Destroy (async)
         self.conn().send_cmd(b'destroy_container', {'node': self.parent().pk,
@@ -307,14 +321,15 @@ class Container(Waitable, Killable, Connectable):
             return
 
         if msg.uuid not in self.processes:
-            logging.debug("Message arrived for an unknown process: " + str(msg.uuid))
+            logging.debug("Message arrived for an unknown process: " + msg.uuid.decode())
             return
 
-        logging.debug("Received data from process: " + msg.uuid.decode())
-        self.processes[msg.uuid]._give_me_messages(msg)
+        # logging.debug("Received data from process: " + msg.uuid.decode())
+        # logging.debug(msg.bulk.decode())
+        self.processes[msg.uuid].give_me_messages(msg)
 
     def __repr__(self):
-        return "<tfnz.container.Container object at %x (image=%s uuid=%s)>" % (id(self), self.image, str(self.uuid))
+        return "<tfnz.container.Container object at %x (image=%s uuid=%s)>" % (id(self), self.image, self.uuid.decode())
 
 
 class ExternalContainer(Connectable):

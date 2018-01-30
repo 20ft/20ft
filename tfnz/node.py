@@ -50,7 +50,7 @@ class Node:
         :param pre_boot_files: List (filename, data) pairs to write into the container before booting.
         :param command: ignores Entrypoint/Cmd and launches with this script instead.
         :param stdout_callback: Called when the container sends output - signature (container, string).
-        :param termination_callback: For when the container completes - signature (container).
+        :param termination_callback: For when the container completes - signature (container, returncode).
         :param advertised_tag: A tag used so other sessions (for the same user) can reference the container.
         :return: A Container object.
 
@@ -90,8 +90,7 @@ class Node:
 
         # Make it go...
         descr = Docker.description(image, self.conn())
-        if 'ContainerConfig' in descr:
-            del descr['ContainerConfig']
+
         if sleep:
             descr['Config']['Entrypoint'] = []
             descr['Config']['Cmd'] = None
@@ -157,6 +156,7 @@ class Node:
 
         if msg.params['status'] == 'running':
             logging.info("Container is running: " + msg.uuid.decode())
+            logging.info("...startup time was: %.3fs" % msg.params['startup_time'])
             container.ip = msg.params['ip']
             container.mark_as_ready()
             return
@@ -166,10 +166,11 @@ class Node:
             if container.wait_lock.locked():
                 container.unblock_and_raise(ValueError("Container did not manage to start"))
             if container.termination_callback is not None:
-                container.termination_callback(container)
+                container.termination_callback(container, 0)
 
             del self.containers[msg.uuid]
             logging.info("Container has exited and/or been destroyed: " + msg.uuid.decode())
 
     def __repr__(self):
-        return "<tfnz.node.Node object at %x (pk=%s containers=%d)>" % (id(self), self.pk, len(self.containers))
+        return "<tfnz.node.Node object at %x (pk=%s containers=%d)>" % \
+               (id(self), b64encode(self.pk).decode(), len(self.containers))

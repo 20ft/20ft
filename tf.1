@@ -2,91 +2,73 @@
 .SH NAME
 tf - launch a container on 20ft.nz
 .SH SYNOPSIS
-.B tf
-[\fB\-h\fR]
-[\fB\-\-location \fIx.20ft.nz\fR]
-[\fB\-\-local \fIy.local\fR]
+\fBtf\fR \-h | \fBtf\fR --help
 
-[[\fB\-e\fR \fIENV=value\fR] ... ]
-[[\fB\-f\fR \fIsrc:dest\fR] ... ]
-[[\fB\-m\fR \fIuuid:/mount/point\fR] ... ]
+\fBtf\fR [option]... source
 
-[[\fB\-p\fR \fIlocal:remote\fR] ... ]
-[[\fB\-r\fR \fIremote:local\fR] ... ]
+\fBtf\fR --systemd user@my.server.com [option]... source
 
-[\fB\-c\fR \fIscript.sh\fR | \fB\-z\fR]
-[\fB\-w\fR \fI[subdomain.]wip.my.com[:www.my.com[:certname]]\fR]
-
-[\fB\-\-ssh port\fR | \fB\-s\fR]
-[\fB\-v\fR | \fB\-q\fR]
-[\fB\-i\fR]
-
-
-\fBsource\fR
-[\fBargs ... \fR]
 
 .SH DESCRIPTION
 .B tf
-launches containers or scripts on 20ft.nz: passes environment variables, copies pre-boot files, mounts persistent volumes, port maps onto the container and selects a starting command; creates an ssh/sftp server, and changes log verbosity.
+launches containers or scripts on 20ft.nz, passes environment variables, selects a starting command, connects stdio, copies pre-boot files, mounts persistent volumes, port maps onto the container, and publishes to the web. For developers it can create an ssh/sftp server, and write a systemd unit file to a server.
 
-If the source name is a file (with the .py extension) that implements tf_exec in Python, the function is called.
-
-   \fBdef tf_exec(location, node, environment, portmap, preboot, volumes, args):\fR
-
-Otherwise the source is assumed to be a docker id in either the 'hex' or 'name' form; or '.' implies the most recently added image in the local docker daemon.
+The source is assumed to be a docker id in either the 'hex' or 'name' form; or '.' implies the most recently added image in the local docker daemon.
 
 .SH OPTIONS
 .TP
 .BR \-h ", " \-\-help
 Present cli help.
 .TP
-.BR \-\-location\ x\.20ft\.nz
+.BR \-\-location\ \fRx\.20ft\.nz
 Use an (optional) non-default location (fqdn).
 .TP
-.BR \-\-local\ y.local
+.BR \-\-local\fR\ y.local
 An optional (local) ip for the broker.
 
 .TP
-.BR \-e\ ENV=value
+.BR \-v,\ --verbose
+Verbose logging (level DEBUG).
+.TP
+.BR \-q,\ --quiet
+Logging is not configured.
+
+.TP
+.BR \-i,\ --interactive
+Run interactively. This connects stdin and stdout to the terminal and provides an escape sequence (triple ^]).
+.TP
+.BR \-e,\ --environment\fR\ ENV=value
 Add an environment variable to the launch context.
 .TP
-.BR \-f\ src:dest
+.BR \-f,\ --file\fR\ src:dest
 Before boot copy the source file into the destination directory.
 .TP
-.BR \-m\ uuid:/mount/point
-Mount the volume 'uuid' at the given mount point.
+.BR \-m,\ --mount\fR\ tag:/mount/point
+Mount, at /mount/point, the volume given by either a uuid, tag, or uuid:tag pair.
 .TP
-.BR \-p\ localport:remoteport
-Create a TCP tunnel between localhost and the container.
+.BR \-p,\ --publish\fR\ localport:remoteport
+Create a TCP tunnel between localhost and the container on the given local and destination ports. Note that local ports < 1024 will need superuser privileges.
 .TP
-.BR \-p\ remoteport:localport
-Create a single use TCP tunnel between the container and localhost (an aid for debugging, not for production).
+.BR \-c,\ --command,\ --entrypoint\fR\ /some/path
+Choose an alternate command/entrypoint into the container.
 .TP
-.BR \-c
-Choose an alternate entrypoint.
-.TP
-.BR \-w\ [subdomain.]wip.my.com[:www.my.com[:certname]]
+.BR \-w,\ --web\fR\ [subdomain.]wip.my.com[:www.my.com[:certname]]
 Publish port 80 of the container to a web endpoint. Publishing to a subdomain is enabled by creating a wildcard DNS entry (i.e. *.wip). Applications which expect a given 'Host' header can have this set with the rewrite (second) option. To host behind ssl pass a certificate name where tf will look for certname.crt and certname.key. Intermediate certs will need to be cat'ed onto the end of the main certificate.
 
 .TP
-.BR \-\-ssh\ port
+.BR \-s,\ \-\-ssh\fR\ port
 Launch the container, then start a shell and wrap it with an ssh session on the specified port (pass:root, blank password).
 .TP
-.BR \-s
-Short for "--ssh 2222"
-.TP
-.BR \-z
-Launch the container but don't run the entrypoint or command (runs 'sleep').
-.TP
-.BR \-i
-Run interactively (connects stdin and stdout).
+.BR \-z,\ \-\-sleep
+Launch the container but don't run the entrypoint or command.
 
 .TP
-.BR \-v
-Verbose logging (level DEBUG).
+.BR \-\-systemd\fR\ user@server.my.com
+Write a systemd unit on a server instead of running tf locally. For an image tagged myco/image it will create a subdirectory of the user's home directory called myco-image and place any necessary resources in there; then create and start a systemd service called myco-image with sensible defaults.
+
 .TP
-.BR \-q
-Logging is not configured.
+.BR \-\-identity\fR\ ~/.ssh/some_id.pem
+Use the given identity file to connect via ssh.
 
 .SH EXAMPLES
 .PP
@@ -95,21 +77,24 @@ Launch the most recently built Docker image and map local port 8080 to remote po
 .RS
 tf -p 8080:80 .
 .RE
+
 .PP
 Launch the stock nginx image mapping port 8080 to 80, with a pre-existing volume for the http content and the ability to ssh/sftp into the container.
 .PP
 .RS
-tf -p 8080:80 -m UUID1234:/usr/share/nginx/html nginx
+tf -p 8080:80 -m persistent_web:/usr/share/nginx/html --ssh 2222 nginx
 .RE
+
 .PP
-Run a script passing "prod" as an argument.
+Launch a docker image (possibly only held locally), map to web endpoint, rewrite the http-request header to client.com, and use an ssl certificate given by the combination of wip.crt and wip.key.
 .PP
 .RS
-tf our_script prod
+tf -w wip.my.com:client.com:wip my/image
 .RE
+
 .PP
-Run a script passing "--prod" as an argument.
+Create a systemd unit to run the above operation as a service on a server (noting that the web traffic will still be served directly from the 20ft cluster).
 .PP
 .RS
-tf our_script -- --prod
+tf --systemd -w wip.my.com:client.com:wip my/image
 .RE

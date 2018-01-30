@@ -1,0 +1,20 @@
+.TH TFDESCRIBE(1)
+.SH NAME
+tfdescribe - describe a local image held by Docker
+.SH SYNOPSIS
+.B tfdescribe
+[\fB\-h\fR]
+\fBimage\fR
+
+.SH DESCRIPTION
+.B tfdescribe
+Describes as a JSON object an image held by a local Docker instance.
+Note that a number of subtrees have been removed from the raw JSON returned by Docker.
+
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Present cli help.
+.TP
+.BR image
+The UUID or tag to examine

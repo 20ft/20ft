@@ -25,12 +25,11 @@ class Sftp(SFTPServerInterface):
 
     # These are blocking commands to give the container a chance to return an exception
 
-    def __init__(self, wrapper):
-        super().__init__(wrapper)
-        self.node_pk = wrapper.container().parent().pk
-        self.container = weakref.ref(wrapper.container())
-        self.conn = weakref.ref(wrapper.container().conn())
-        pass
+    def __init__(self, transport):
+        super().__init__(transport)
+        self.node_pk = transport.parent().node().pk
+        self.container = weakref.ref(transport.container())
+        self.conn = weakref.ref(transport.container().conn())
 
     def list_folder(self, directory):
         ls = self.conn().send_blocking_cmd(b'ls_dir', {"node": self.node_pk,
@@ -104,7 +103,7 @@ class Sftp(SFTPServerInterface):
             return SFTP_OK
 
     def __repr__(self):
-        return "<tfnz.sftp.Sftp object at %x (container=%s)>" % (id(self), str(self.container().uuid))
+        return "<tfnz.sftp.Sftp object at %x (container=%s)>" % (id(self), self.container().uuid.decode())
 
 
 class SftpFile(SFTPHandle):

@@ -26,7 +26,7 @@ Rather more 'in the intention of' 20ft is to create a tiny Python program and ei
     import signal
     from tfnz.location import Location
 
-    container = Location().ranked_nodes()[0].spawn('nginx')
+    container = Location().node().spawn('nginx')
     container.attach_tunnel(80, localport=8080)
     signal.pause()
 
@@ -76,7 +76,7 @@ In reality we are going to want to need (at least) development and production en
         volume_uuid = loc.kv[dbname]
         node, vol = loc.node_and_volume(volume_uuid)
     except KeyError:
-        node = loc.ranked_nodes()[0]
+        node = loc.node()
         vol = node.create_volume()
         loc.set_kv({dbname: vol.uuid})
 
@@ -101,7 +101,7 @@ Because the containers and persistent volumes are based on ZFS volumes we have l
 
     from tfnz.location import Location
 
-    node = Location().ranked_nodes()[0]
+    node = Location().node()
     volume = node.create_volume()
     container = node.spawn_container('nginx', volumes=[(volume, '/mount/point')])
 
@@ -119,7 +119,7 @@ Similarly it is possible to reboot a container with its image restored to the "a
     from tfnz.location import Location
 
 
-    node = Location().ranked_nodes()[0]
+    node = Location().node()
     ctr = node.spawn_container('nginx')
     ctr.put('/usr/share/nginx/html/index.html', b'A big mess from a unit test')
     assert ctr.fetch('/usr/share/nginx/html/index.html') == b'A big mess from a unit test'

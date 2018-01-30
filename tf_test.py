@@ -31,10 +31,10 @@ from tfnz.endpoint import Cluster
 
 class TfTest(TestCase):
     location = None
-    location_string = "sydney.20ft.nz"
-    location_cert = "~/.ssh/aws_sydney.pem"
-    # location_string = "tiny"
-    # location_cert = "~/.ssh/id_rsa"
+    # location_string = "sydney.20ft.nz"
+    # location_cert = "~/.ssh/aws_sydney.pem"
+    location_string = "tiny.20ft.nz"
+    location_cert = "~/.ssh/id_rsa"
     disable_laksa_restart = True
 
     @classmethod
@@ -69,12 +69,16 @@ class TfTest(TestCase):
 
         # did it use the right docker config?
         ideal = Docker.description('bitnami/apache')
-        del ideal['ContainerConfig']  # we ditch this because it's duplicated
-        self.assertTrue(container.docker_config == ideal, 'Contaftiner launched with wrong docker config')
+        self.assertTrue(container.docker_config == ideal, 'Container launched with wrong docker config')
+
+        node.destroy_container(container)
 
     def test_env_vars(self):
-        container = TfTest.location.node().spawn_container('tfnz/env_test', env=[('TEST', 'testy')]).wait_until_ready()
+        node = TfTest.location.node()
+        container = node.spawn_container('tfnz/env_test', env=[('TEST', 'testy')])
+        # tunnel = container.attach_tunnel(80, 8000)
         tunnel = container.wait_http_200()
+        time.sleep(1)
 
         # did it pass the environment correctly?
         reply = requests.get('http://127.0.0.1:' + str(tunnel.localport()))
@@ -82,34 +86,40 @@ class TfTest(TestCase):
         var_dict = {var.split('=')[0]: var.split('=')[1] for var in vars[:-1]}
         self.assertTrue(var_dict['TEST'] == "testy", "Failed to pass environment variable")
         container.destroy_tunnel(tunnel)
+        node.destroy_container(container)
 
     def test_spawn_asleep(self):
         # is it asleep?
-        container = TfTest.location.node().spawn_container('bitnami/apache', sleep=True)
+        node = TfTest.location.node()
+        container = node.spawn_container('bitnami/apache', sleep=True)
         time.sleep(5)  # give it a while to boot or fall over
         ps_result = container.run_process('/bin/ps ax')  # tests that we can still run processes
         self.assertTrue('sh' in ps_result[0].decode())
         self.assertTrue('apache' not in ps_result[0].decode())
+        node.destroy_container(container)
 
     def test_spawn_preboot(self):
         # sent wrong
+        node = TfTest.location.node()
+        ctr = None
         preboot = ['/usr/share/nginx/html/index.html', 'Hello World!']
         try:
-            TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
+            node.spawn_container('nginx', pre_boot_files=preboot)
         except ValueError:
             self.assertTrue(True)
 
         # wrong again
         preboot = [{'/usr/share/nginx/html/index.html': 'Hello World!'}]
         try:
-            TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
+            node.spawn_container('nginx', pre_boot_files=preboot)
         except ValueError:
             self.assertTrue(True)
 
         # write configuration files before we boot
         preboot = [('/usr/share/nginx/html/index.html', 'Hello World!')]
-        container = TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
+        container = node.spawn_container('nginx', pre_boot_files=preboot)
         self.assertTrue(b'Hello World!' in container.fetch('/usr/share/nginx/html/index.html'))
+        node.destroy_container(container)
 
     def test_volumes(self):
         vol = TfTest.location.create_volume()
@@ -268,34 +278,37 @@ class TfTest(TestCase):
         sftp_op(b'rmdir /unit-test', port)
         self.assertFalse(b'unit-test' in sftp_op(b'ls', port))
 
-    # def test_reboot(self):
-    #     # create a container with some preboot files
-    #     preboot = [('/usr/share/nginx/html/index.html', b'Hello World!')]
-    #     container = TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
-    #     tnl = container.wait_http_200()
-    #
-    #     # Is it serving the correct file?
-    #     resp = requests.get("http://127.0.0.1:" + str(tnl.localport()))
-    #     self.assertTrue(resp.text == 'Hello World!', "Preboot file apparently not written in")
-    #
-    #     # Broken?
-    #     container.put('/usr/share/nginx/html/index.html', b'Smeg')
-    #     resp = requests.get("http://127.0.0.1:" + str(tnl.localport()))
-    #     self.assertTrue(resp.text == 'Smeg', "Didn't manage to replace preboot file")
-    #
-    #     # Reset should take it to after the preboot files and not just the container image
-    #     container.reboot(reset_filesystem=True)
-    #     try:
-    #         tnl2 = container.wait_http_200()
-    #         resp = requests.get("http://127.0.0.1:" + str(tnl2.localport()))
-    #         self.assertTrue(resp.text == 'Hello World!', "Filesystem did not recover")
-    #     except BaseException as e:
-    #         self.assertTrue(False, "test_reboot failed: " + str(e))
+        node.destroy_container(ctr)
+
+    def test_reboot(self):
+        # create a container with some preboot files
+        preboot = [('/usr/share/nginx/html/index.html', b'Hello World!')]
+        container = TfTest.location.node().spawn_container('nginx', pre_boot_files=preboot)
+        tnl = container.wait_http_200()
+
+        # Is it serving the correct file?
+        resp = requests.get("http://127.0.0.1:" + str(tnl.localport()))
+        self.assertTrue(resp.text == 'Hello World!', "Preboot file apparently not written in")
+
+        # Broken?
+        container.put('/usr/share/nginx/html/index.html', b'Smeg')
+        resp = requests.get("http://127.0.0.1:" + str(tnl.localport()))
+        self.assertTrue(resp.text == 'Smeg', "Didn't manage to replace preboot file")
+
+        # Reset should take it to after the preboot files and not just the container image
+        container.reboot(reset_filesystem=True)
+        try:
+            tnl2 = container.wait_http_200()
+            resp = requests.get("http://127.0.0.1:" + str(tnl2.localport()))
+            self.assertTrue(resp.text == 'Hello World!', "Filesystem did not recover")
+        except BaseException as e:
+            self.assertTrue(False, "test_reboot failed: " + str(e))
 
     def test_firewalling(self):
         # can we connect one container to another?
-        server = TfTest.location.node().spawn_container('nginx')
-        client = TfTest.location.node().spawn_container('alpine')
+        node = TfTest.location.node()
+        server = node.spawn_container('nginx')
+        client = node.spawn_container('alpine')
 
         # make the client more clienty
         client.run_process('apk update')
@@ -317,6 +330,9 @@ class TfTest(TestCase):
         time.sleep(1)
         stdout, stderr, exit_code = client.run_process(cmd)
         self.assertTrue(exit_code != 0, 'Did not manage to disconnect containers')
+
+        node.destroy_container(client)
+        node.destroy_container(server)
 
         # across nodes?
         nodes = TfTest.location.ranked_nodes()
@@ -349,7 +365,8 @@ class TfTest(TestCase):
         ep = eps[TfTest.location_string]
 
         # create a single server cluster to serve the endpoint
-        nginx = TfTest.location.node().spawn_container('nginx')
+        node = TfTest.location.node()
+        nginx = node.spawn_container('nginx')
         cluster = Cluster([nginx])
 
         # attach the cluster to the endpoint
@@ -361,6 +378,7 @@ class TfTest(TestCase):
         self.assertTrue('Welcome to nginx!' in reply.text, 'WebEndpoint failed to publish')
 
         ep.unpublish(cluster)
+        node.destroy_container(nginx)
 
     def test_web_endpoint_ssl(self):
         # test and create endpoint
@@ -370,17 +388,17 @@ class TfTest(TestCase):
             return
         ep = eps[TfTest.location_string]
 
-        cluster = None
+        # create a single server cluster to serve the endpoint
+        node = TfTest.location.node()
+        nginx = node.spawn_container('nginx')
+        cluster = Cluster([nginx])
+
         try:
             # create self-signed cert
             fqdn = shortuuid.uuid() + "." + TfTest.location_string
             subprocess.call(['echo "\n\n\n\n\n%s\n\n" | '
                              'openssl req -x509 -nodes -newkey rsa:2048 -keyout key%s.pem -out cert%s.pem' %
                              (fqdn, fqdn, fqdn)], shell=True)
-
-            # create a single server cluster to serve the endpoint
-            nginx = TfTest.location.node().spawn_container('nginx')
-            cluster = Cluster([nginx])
 
             # attach the cluster to the endpoint
             ep.publish(cluster, fqdn, ssl=('cert%s.pem' % fqdn, 'key%s.pem' % fqdn))
@@ -391,6 +409,7 @@ class TfTest(TestCase):
             self.assertTrue('Welcome to nginx!' in reply.text, 'WebEndpoint failed to publish')
         finally:
             ep.unpublish(cluster)
+            node.destroy_container(nginx)
             subprocess.call(['rm', 'cert%s.pem' % fqdn, 'key%s.pem' % fqdn])
 
     def test_external_container(self):
@@ -418,6 +437,7 @@ class TfTest(TestCase):
         server_node.destroy_container(server)
 
     def test_state_tracking(self):
+        # always succeeds when run in isolation. TODO
         node = TfTest.location.node()
 
         # containers
@@ -486,16 +506,16 @@ class TfTest(TestCase):
         # cleaning
         c2.destroy_tunnel(t2)
 
-    def test_multiple_connect(self):
-        # should be banned by the geneva convention
-        locs = [Location() for _ in range(0, 5)]
-        nodes = [loc.node() for loc in locs]
-        containers = [node.spawn_container('alpine') for node in nodes]
-        self.assertTrue(True)
-        for loc in locs:
-            loc.disconnect()
-        containers.clear()
-        locs.clear()
+    # def test_multiple_connect(self):
+    #     # should be banned by the geneva convention
+    #     locs = [Location() for _ in range(0, 5)]
+    #     nodes = [loc.node() for loc in locs]
+    #     containers = [node.spawn_container('alpine') for node in nodes]
+    #     self.assertTrue(True)
+    #     for loc in locs:
+    #         loc.disconnect()
+    #     containers.clear()
+    #     locs.clear()
 
     def test_portscan_connect(self):
         # something somewhere is messing with our socket
@@ -507,7 +527,8 @@ class TfTest(TestCase):
 
     def test_file_handling(self):
         # tests raising exceptions, too
-        container = TfTest.location.node().spawn_container('nginx')
+        node = TfTest.location.node()
+        container = node.spawn_container('nginx')
 
         # upload a new file
         container.put('/usr/share/nginx/html/index.html', b'Hello World')
@@ -532,9 +553,12 @@ class TfTest(TestCase):
         except ValueError as e:
             self.assertTrue(True)
 
+        node.destroy_container(container)
+
     def test_spawn_process(self):
         # This test fails if noodle is running in the debugger
-        container = TfTest.location.node().spawn_container('debian', sleep=True)
+        node = TfTest.location.node()
+        container = node.spawn_container('debian', sleep=True)
 
         # test command styles
         r1 = container.run_process('/bin/echo Hello World')[0]
@@ -546,49 +570,51 @@ class TfTest(TestCase):
         except ValueError:
             pass
 
+        node.destroy_container(container)
+
     def test_callbacks_shell(self):
         self.terminated_process = None
 
+        self.test_data = b''
         def test_data_callback(obj, data):
             self.test_data += data
 
-        def test_termination_callback(obj):
+        def test_termination_callback(obj, returncode):
             self.terminated_process = obj
 
         node = TfTest.location.node()
         alpine_container = node.spawn_container('alpine')
 
         # a long lived process test asynchronous results
-        self.test_data = b''
         long_process = alpine_container.spawn_process('iostat -c 1', data_callback=test_data_callback)
 
         # a short process tests termination
         short_process = alpine_container.spawn_process('sleep 1', termination_callback=test_termination_callback)
-        time.sleep(2)
+        time.sleep(5)
         self.assertTrue(self.terminated_process is short_process, 'Termination callbacks not working')
 
         # worked asynchronously
         snapshot = bytes(self.test_data)
-        if b'.pycharm_helpers' not in snapshot:
+        if b'avg-cpu' not in snapshot:
             lines = snapshot.count(b'\n')
             self.assertTrue(lines != 0, 'Data callbacks not working')
 
         # destroys
         alpine_container.destroy_process(long_process)
-        time.sleep(1)  # time to actually stop
+        time.sleep(2)  # time to actually stop
         self.test_data = b''
-        time.sleep(1)  # give it a chance to go wrong
+        time.sleep(2)  # give it a chance to go wrong
         destroyed_lines = self.test_data.count(b'\n')
         self.assertTrue(destroyed_lines == 0, 'Destroying a long running process didn\'t work')
 
         # works for a shell
-        self.test_data = b''
         shell = alpine_container.spawn_shell(data_callback=test_data_callback,
                                              termination_callback=test_termination_callback)
-        shell.stdin(b'/bin/ps faxu\n')
-        time.sleep(3)
+        shell.stdin(b'uname -v\n')
+        time.sleep(1)  # otherwise we kill the process before it's had time to return
         alpine_container.destroy_process(shell)
-        self.assertTrue(b'iostat -c 1' in self.test_data, "Did not apparently shell in")
+        time.sleep(1)  # otherwise we test for termination before it's had time to terminate
+        self.assertTrue(b'Debian' in self.test_data, "Did not apparently shell in")
         self.assertTrue(self.terminated_process is shell, 'Shell did not call termination callback')
 
         # being informed of the termination of a process because it was inside a container that was destroyed
@@ -604,7 +630,8 @@ class TfTest(TestCase):
         def test_interactive_callback(obj, data):
             self.sh_data += data
 
-        container = TfTest.location.node().spawn_container('alpine', sleep=True)
+        node = TfTest.location.node()
+        container = node.spawn_container('alpine', sleep=True)
         ash = container.spawn_process('sh', data_callback=test_interactive_callback)
         time.sleep(1)
         self.sh_data = b''
@@ -613,15 +640,17 @@ class TfTest(TestCase):
         self.assertTrue(b'hi' in self.sh_data, "Asynchronous return did not apparently send data")
         async = self.sh_data
         self.sh_data = b''
+        container.destroy_process(ash)
+        node.destroy_container(container)
 
     def test_container_terminates(self):
         self.terminate_data = None
 
-        def test_terminates_callback(obj):
+        def test_terminates_callback(obj, returncode):
             self.terminate_data = obj
 
-        container = TfTest.location.node().spawn_container('tfnz/ends_test',
-                                                           termination_callback=test_terminates_callback)
+        node = TfTest.location.node()
+        container = node.spawn_container('tfnz/ends_test', termination_callback=test_terminates_callback)
         time.sleep(10)
         self.assertTrue(self.terminate_data == container, "Termination callback was not called")
 

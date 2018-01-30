@@ -14,13 +14,11 @@
 
 # the method to implement is tf_main(location, node, environment, portmap, pass_args)
 
-import argparse
 import sys
-import signal
 import re
 import os
 import os.path
-from sys import exit, argv, stderr
+from sys import argv, stderr
 from messidge import default_location, create_account
 from tfnz.location import Location
 from tfnz.volume import Volume
@@ -52,29 +50,30 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # right, get on with it
     parser = base_argparse('tf')
     launch_group = parser.add_argument_group('launch options')
-    launch_group.add_argument('-v', help='verbose logging', action='store_true')
-    launch_group.add_argument('-q', help='no logging', action='store_true')
-    launch_group.add_argument('-i', help='interactive', action='store_true')
-    launch_group.add_argument('-e', help='set an environment variable', action='append', metavar='VAR=value')
-    launch_group.add_argument('-f', help='write a pre-boot file', action='append', metavar='src:dest')
-    launch_group.add_argument('-m', help='mount a volume', action='append', metavar='uuid:mountpoint')
-    launch_group.add_argument('-p', help='add a local->remote tcp proxy', action='append', metavar='8080:80')
-    launch_group.add_argument('-r', help="add a remote->local tcp proxy", action='append', metavar='55555')
-    launch_group.add_argument('-c', help='use this command (in container) to start', metavar='script.sh')
-    launch_group.add_argument('-w', help='publish on web endpoint',
+    launch_group.add_argument(('-v', '--verbose'), help='verbose logging', action='store_true')
+    launch_group.add_argument(('-q', '--quiet'), help='no logging', action='store_true')
+    launch_group.add_argument(('-i', '--interactive'), help='interactive', action='store_true')
+    launch_group.add_argument(('-e', '--env'), help='set an environment variable', action='append', metavar='VAR=value')
+    launch_group.add_argument(('-f', '--file'), help='write a pre-boot file', action='append', metavar='src:dest')
+    launch_group.add_argument(('-m', '--mount'), help='mount a volume', action='append', metavar='uuid:mountpoint')
+    launch_group.add_argument(('-p', '--publish'), help='add a local->remote tcp proxy', action='append',
+                              metavar='8080:80')
+    launch_group.add_argument(('-c', '--command', '--entrypoint'),
+                              help='use this command/entrypoint (in container) to start', metavar='script.sh')
+    launch_group.add_argument(('-w', '--web'), help='publish on web endpoint',
                               metavar='subdomain.my.com[:www.my.com[:certname]]')
     interactive_group = parser.add_argument_group('local/interactive options')
-    interactive_group.add_argument('--ssh', help='create an ssh/sftp wrapped shell on given port', metavar='2222')
-    interactive_group.add_argument('-s', help='short form for "--ssh 2222"', action='store_true')
-    interactive_group.add_argument('-z', help='launch the container asleep (instead of cmd)', action='store_true')
+    interactive_group.add_argument(('-s', '--ssh'), help='create an ssh/sftp wrapped shell on given port',
+                                   metavar='2222')
+    interactive_group.add_argument(('-z', '--sleep'), help='launch the container asleep (instead of entrypoint)',
+                                   action='store_true')
     server_group = parser.add_argument_group('server options')
-    server_group.add_argument('--systemd', help='create a systemd service', metavar='user@tinyserver.my.com')
-    server_group.add_argument('--identity', help='specify an identity file')
+    server_group.add_argument('--systemd', help='create a systemd service', metavar='user@server.my.com')
+    server_group.add_argument('--identity', help='specify an identity file to use with --systemd',
+                              metavar="~/.ssh/some_id.pem")
 
     parser.add_argument('source', help="if '.', runs the most recently added docker image; "
                                        "else this is the tag or hex id of an image to run.")
-    parser.add_argument('args', help='arguments to pass to a script or subprocess (you may need "--", see man page)',
-                        nargs=argparse.REMAINDER)
     args = parser.parse_args()
 
     # collect any pre-boot files
@@ -139,11 +138,6 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # are we going to be using the most recent build?
     if args.source == '.':
         args.source = Docker.last_image()
-
-    # maybe remove --
-    if len(args.args) > 0:
-        if args.args[0] == '--':
-            del args.args[0]
 
     # create env-vars
     e_vars = set()
@@ -214,7 +208,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                                          pre_boot_files=preboot,
                                          volumes=volumes,
                                          stdout_callback=(interactive.stdout_callback if args.i
-                                                          else lambda _, out: Interactive.stdout_flush(out)),
+                                                          else lambda _, out: sys.stdout.buffer.write(out)),
                                          termination_callback=(interactive.termination_callback if args.i
                                                                else location.disconnect),
                                          command=args.c,
@@ -227,11 +221,6 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # create the tunnels
     for m in portmap:
         container.attach_tunnel(m[1], m[0])
-
-    # backchannels
-    if args.r is not None:
-        for r in args.r:
-            container.create_backchannel(int(r))
 
     # launch an ssh server? user/pass are anything/anything - you can only connect from localhost anyway
     if args.ssh or args.s:
@@ -250,7 +239,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     else:
         try:
             location.conn.wait_until_complete()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, AttributeError):
             pass
     return location
 

@@ -1,0 +1,10 @@
+*.egg*
+build*
+dist*
+*ignore
+*test*
+Dockerfile
+man
+nix
+*.1
+*messidge*

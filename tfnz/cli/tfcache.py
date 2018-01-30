@@ -13,6 +13,7 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 from tfnz.cli import generic_cli, base_argparse
+from tfnz.docker import Docker
 
 
 def main():
@@ -22,7 +23,8 @@ def main():
 
 
 def cache_image(location, args):
-    location.ensure_image_uploaded(args.image)
+    descr = Docker.description(args.image)
+    location.ensure_image_uploaded(args.image, descr=descr)
 
 
 if __name__ == "__main__":

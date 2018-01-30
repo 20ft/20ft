@@ -2,12 +2,20 @@
 The Basics
 ==========
 
-Containers are basically virtual machines with low startup times. They almost all run on the x86-64 Linux ABI and are made with a Linux distribution as their base layer but are very rarely actually *booted*. They have access to a fast non-routable lan but little else; and are transient (i.e. losing all changes once the container is destroyed).
+Containers are basically virtual machines with low startup times and efficient resource usage. They almost all run on the x86-64 Linux ABI and are made with a Linux distribution as their base layer but are very rarely actually *booted*. They have access to a fast non-routable lan, a default route, some form of software defined storage, and in 20ft's case a web gateway. They are usually dedicated to a single task or a particular piece of software.
 
-They are normally deployed to a container cluster: a collection of physical or virtual machines ("nodes"); each running an agent; and with a master that acts as a bastion onto the entire facility. Implementations of persistent storage vary and 20ft uses node-local storage (fast, simple).
+Containers are transient - that is to say that the contents of their filesystems are lost when they restart (this does not apply to the software defined storage, however). The combination of a transient nature and low startup times implies that containers have much shorter lifecycles than traditional servers, being expected to fail entirely and be respawned rather than to report their failure to an administer and expect manual intervention. The short lifecycles and resource efficiency also mean that containers can be deployed for short term tasks - for example to encode a single stream of video, serve a single client, or even conduct a single transaction in an isolated environment.
 
-Let's have a look at 20ft's specific implementation of this...
+Traditional Deployment Architecture
+===================================
 
+You can skip this part if you want, but it sets the scene for the "why" as well as the "what".
+
+Below is a traditional container deployment:
+
+.. image:: _static/traditional.png
+
+The major blocks are coloured to show the major subsystems and vendors: Runtime; Networking; Filesystem; Orchestration; and KV, Secrets and DNS are generally open to interpretation. There are clearly different opinions as to which parts belong to which vendor, but the overall position is one of a complex system with lots of interdependencies.
 
 20ft Architecture
 =================

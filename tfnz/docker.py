@@ -40,15 +40,20 @@ class Docker:
                 logging.info("Local docker doesn't have image, trying for remote")
             else:
                 # presumably worked, cache it and return
-                obj = json.loads(r.text)
-                if conn is not None:
-                    conn.send_cmd(b'cache_description', {'image_id': docker_image_id, 'description': obj})
-                return obj
+                descr = json.loads(r.text)
+
+                # strip some stuff we don't need
+                removes = ('Container', 'Comment', 'ContainerConfig', 'GraphDriver')
+                for remove in removes:
+                    if remove in descr:
+                        del descr[remove]
+
+                # all good
+                return descr
         except requests.exceptions.ConnectionError:
             can_connect_local = False
 
         # no go locally, try remotely
-        have_description = False
         if conn is not None:
             logging.info("Retrieving description: " + docker_image_id)
             msg = conn.send_blocking_cmd(b'retrieve_description', {'image_id': docker_image_id})
@@ -57,7 +62,10 @@ class Docker:
 
         # image is in neither location
         if can_connect_local:
-            raise RuntimeError("Cannot find image in either local docker or remote image cache: " + docker_image_id)
+            if conn is not None:
+                raise RuntimeError("Cannot find image in either local docker or remote image cache: " + docker_image_id)
+            else:
+                raise RuntimeError("Cannot find image in local docker: " + docker_image_id)
         else:
             # local's dead, too
             Docker._docker_warning()

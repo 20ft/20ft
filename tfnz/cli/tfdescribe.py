@@ -1,3 +1,4 @@
+#!/usr/local/bin/python3.5
 # Copyright (c) 2017 David Preece, All rights reserved.
 #
 # Permission to use, copy, modify, and/or distribute this software for any
@@ -11,16 +12,21 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-# It does, indeed, need *all* these headers, and 'make' etc. etc.
-# docker build --squash -t tfnz/tf .
+import json
+from tfnz.cli import generic_cli, base_argparse
+from tfnz.docker import Docker
 
-FROM alpine
-RUN apk update
-RUN apk upgrade
-RUN apk add python3 gcc make python3-dev py3-certifi zlib zlib-dev libc-dev linux-headers py3-zmq libffi libffi-dev openssl openssl-dev
 
-RUN pip3 install tfnz
+def main():
+    parser = base_argparse('tfdescribe', location=False)
+    parser.add_argument('image', help='image UUID or tag to describe')
+    generic_cli(parser, {None: describe_image}, quiet=False, location=False)
 
-RUN apk del gcc make python3-dev zlib-dev libc-dev linux-headers libffi-dev openssl-dev
-RUN rm -rf /var/cache /etc/motd
-RUN find / -name "*.o" | xargs rm $0
+
+def describe_image(location, args):
+    desc = Docker.description(args.image)
+    print(json.dumps(desc, indent=2))
+
+
+if __name__ == "__main__":
+    main()

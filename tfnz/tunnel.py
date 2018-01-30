@@ -19,6 +19,7 @@ import logging
 import socket
 import time
 import shortuuid
+import weakref
 from . import Killable
 
 
@@ -35,22 +36,25 @@ class Tunnel(Killable):
         self.uuid = shortuuid.uuid().encode()
         self.sess = connection.rid
         self.node = node
-        self.connection = connection
+        self.connection = weakref.ref(connection)
         self.socket = None
-        self.container = container
+        self.container = weakref.ref(container)
         self.port = port
-        self.lp = lp
-        self.bind = bind
+        self.lp = lp  # can be None
+        self.bind = bind  # can be None
         self.fd = None
+        self.tcpip_direct_return = None
         self.timeout = timeout
         self.proxies = {}
+        self.created = False
         connection.register_connect_callback(self._session_reconnected)
-
-    def __del__(self):
-        self.destroy()  # bails if destroyed already
 
     def connect(self):
         self.ensure_alive()
+        # we need to be able to call connect twice...
+        if self.created:
+            return
+        self.created = True
         # create the listen socket
         self.socket = socket.socket()
         self.socket.setblocking(False)
@@ -62,14 +66,39 @@ class Tunnel(Killable):
             pass
         self.socket.listen()
         self.fd = self.socket.fileno()
-        self.connection.loop.register_exclusive(self.fd, self.event, comment="listener for " + str(self))
+        self.connection().loop.register_exclusive(self.fd, self.event, comment="listener for " + str(self))
 
         # have the location create its end.
-        self.connection.send_cmd(b'create_tunnel',
-                                 {'container': self.container.uuid,
-                                  'port': self.port,
-                                  'timeout': self.timeout}, uuid=self.uuid)
-        logging.info("Created tunnel object: %s (%d -> %d)" % (self.uuid.decode(), self.lp, self.port))
+        self.connection().send_cmd(b'create_tunnel',
+                                   {'container': self.container().uuid,
+                                    'port': self.port,
+                                    'timeout': self.timeout}, uuid=self.uuid)
+        logging.info("Creating remote tunnel: %s (%d -> %d)" % (self.uuid.decode(), self.lp, self.port))
+
+    def connect_tcpip_direct(self, caller):
+        self.ensure_alive()
+        # we need to be able to call connect twice...
+        if self.created:
+            return
+        self.created = True
+        self.tcpip_direct_return = caller
+
+        # have the location create its end.
+        self.connection().send_cmd(b'create_tunnel',
+                                   {'container': self.container().uuid,
+                                    'port': self.port,
+                                    'timeout': self.timeout}, uuid=self.uuid)
+        logging.info("Creating remote tcpip direct tunnel: %s (port %d)" % (self.uuid.decode(), self.port))
+
+    def stdin(self, data):
+        # Direct tcpip
+        # Is this a close?
+        if len(data) == 0:
+            self.destroy()
+            self.tcpip_direct_return.tunnel_closed(self)
+        else:
+            self.connection().send_cmd(b'to_proxy', {"tunnel": self.uuid,
+                                                     "proxy": 0}, bulk=data)
 
     def localport(self) -> int:
         """Returns the (possibly dynamically allocated) local port number.
@@ -78,22 +107,27 @@ class Tunnel(Killable):
         self.ensure_alive()
         return self.lp
 
-    def destroy(self):
+    def destroy(self, with_command=True):
         # Destroy this tunnel.
         if self.bail_if_dead():
             return
         self.mark_as_dead()
-        self.connection.unregister_connect_callback(self._session_reconnected)
+        self.connection().unregister_connect_callback(self._session_reconnected)
+        self.disconnect_all_proxies()
+        if self.fd is not None:
+            self.connection().loop.unregister_exclusive(self.fd)
+        if self.socket is not None:
+            self.socket.close()
+        if with_command:
+            self.connection().send_cmd(b'destroy_tunnel', {"tunnel": self.uuid})
+        logging.info("Destroyed remote tunnel: " + self.uuid.decode())
 
+    def disconnect_all_proxies(self):
+        # when the container reboots we need to close the tcp connections
         for proxy in list(self.proxies.items()):
-            self.connection.loop.unregister_exclusive(proxy[0])
+            self.connection().loop.unregister_exclusive(proxy[0])
             proxy[1].close()
         self.proxies.clear()
-        self.connection.loop.unregister_exclusive(self.fd)
-        self.socket.close()
-        self.socket = None
-        self.connection.send_cmd(b'destroy_tunnel', {"tunnel": self.uuid})
-        logging.info("Destroyed tunnel: " + self.uuid.decode())
 
     def event(self, localfd):
         # An event on the connection itself
@@ -110,10 +144,10 @@ class Tunnel(Killable):
 
         fd = new_proxy[0].fileno()
         self.proxies[fd] = new_proxy[0]
-        self.connection.loop.register_exclusive(fd, self.to_proxy, comment="proxy fd=" + str(fd))
+        self.connection().loop.register_exclusive(fd, self.to_proxy, comment="proxy fd=" + str(fd))
 
         # send nothing to force the connection open on the far end - some servers like to talk first
-        self.connection.send_cmd(b'to_proxy', {"tunnel": self.uuid,
+        self.connection().send_cmd(b'to_proxy', {"tunnel": self.uuid,
                                                "proxy": fd}, bulk=b'')
 
         logging.debug("Accepted proxy connection, fd: " + str(fd))
@@ -132,12 +166,12 @@ class Tunnel(Killable):
             if data == b'':
                 logging.debug("Received no data, assuming socket was closed for proxy: " + str(localfd))
                 self.close_proxy(localfd)
-                self.connection.send_cmd(b'close_proxy', {"tunnel": self.uuid,
-                                                          "proxy": localfd})
+                self.connection().send_cmd(b'close_proxy', {"tunnel": self.uuid,
+                                                            "proxy": localfd})
             else:
                 logging.debug("Sending data to proxy: " + str(localfd))
-                self.connection.send_cmd(b'to_proxy', {"tunnel": self.uuid,
-                                                       "proxy": localfd}, bulk=data)
+                self.connection().send_cmd(b'to_proxy', {"tunnel": self.uuid,
+                                                         "proxy": localfd}, bulk=data)
         except KeyError:
             logging.debug("Received a forwarding request to a proxy not in map: " + str(localfd))
 
@@ -147,6 +181,13 @@ class Tunnel(Killable):
         # Data being sent from the container
         if self.bail_if_dead():
             return
+
+        # is this a tcpip_direct tunnel?
+        if self.tcpip_direct_return is not None:
+            self.tcpip_direct_return.data(self, msg.bulk)
+            return
+
+        # headed for a tcp proxy as usual
         try:
             proxy_fd = msg.params['proxy']
         except KeyError:
@@ -168,6 +209,13 @@ class Tunnel(Killable):
     def close_proxy(self, msg_or_fd):
         if self.bail_if_dead():
             return
+
+        # destroy then inform the ssh server
+        if self.tcpip_direct_return is not None:
+            self.destroy()
+            self.tcpip_direct_return.close(self)
+            return
+
         # Close one single proxy
         try:
             try:
@@ -175,7 +223,7 @@ class Tunnel(Killable):
             except AttributeError:
                 fd = msg_or_fd  # when we close the proxy locally we will have been passed a file desriptor
             self.proxies[fd].close()
-            self.connection.loop.unregister_exclusive(fd)
+            self.connection().loop.unregister_exclusive(fd)
             del self.proxies[fd]
             logging.debug("Closed proxy connection, fd: " + str(fd))
         except KeyError:
@@ -187,4 +235,4 @@ class Tunnel(Killable):
 
     def __repr__(self):
         return "<tfnz.tunnel.Tunnel object at %x (uuid=%s port=%d)>" % \
-               (id(self), str(self.uuid), self.port)
+               (id(self), self.uuid.decode(), self.port)

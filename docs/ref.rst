@@ -26,10 +26,7 @@ Container
 ..  autoclass:: tfnz.container.Container
     :members:
 
-Tunnel
-======
-
-..  autoclass:: tfnz.tunnel.Tunnel
+..  autoclass:: tfnz.container.ExternalContainer
     :members:
 
 Process
@@ -38,11 +35,23 @@ Process
 ..  autoclass:: tfnz.process.Process
     :members:
 
-Helpers
-=======
+Traits
+======
 
 ..  autoclass:: tfnz.Waitable
     :members:
 
 ..  autoclass:: tfnz.Killable
+    :members:
+
+..  autoclass:: tfnz.Connectable
+    :members:
+
+..  autoclass:: tfnz.Taggable
+    :members:
+
+Collections
+===========
+
+..  autoclass:: tfnz.TaggedCollection
     :members:

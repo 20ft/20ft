@@ -20,7 +20,7 @@ from . import Killable
 class Process(Killable):
     """An object encapsulating a process within a container.
     Do not instantiate directly, use container.spawn_process."""
-    def __init__(self, parent, uuid, data_callback, termination_callback):
+    def __init__(self, parent, uuid, data_callback, termination_callback, stderr_callback=None):
         super().__init__()
         self.parent = weakref.ref(parent)
         self.node = weakref.ref(parent.parent())
@@ -28,6 +28,7 @@ class Process(Killable):
         self.uuid = uuid
         self.data_callback = data_callback
         self.termination_callback = termination_callback
+        self.stderr_callback = stderr_callback
         self.wrapper = None
 
     def stdin(self, data: bytes):
@@ -43,39 +44,49 @@ class Process(Killable):
 
         """
         # a client side disconnection?
+        self.ensure_alive()
         if len(data) == 0:
-            self._internal_destroy()
+            self.destroy()
             return
 
-        self.ensure_alive()
         self.conn().send_cmd(b'stdin_process', {'node': self.node().pk,
                                                 'container': self.parent().uuid,
                                                 'process': self.uuid}, bulk=data)
 
-    def _internal_destroy(self, with_command: Optional[bool]=True):
-        # Destroy this process
+    def destroy(self, with_command=True):
         if self.bail_if_dead():
             return
-        self.mark_as_dead()
 
-        # Are we actually going to destroy it or is this a fake termination because the container has died?
+        # and then wait for notice of termination in msg.bulk
         if with_command:
             self.conn().send_cmd(b'destroy_process', {'node': self.node().pk,
                                                       'container': self.parent().uuid,
                                                       'process': self.uuid})
-
+        logging.info("Terminated client side: %s" % self.uuid.decode())
+        self.mark_as_dead()
         if self.termination_callback is not None:
-            self.termination_callback(self)
-        logging.info("Destroyed process: " + self.uuid.decode())
+            self.termination_callback(self, 0)
 
-    def _give_me_messages(self, msg):
+    def give_me_messages(self, msg):
         if self.bail_if_dead():
+            return
+
+        if msg is None:
+            logging.error("give_me_messages was sent None")
             return
 
         # Has the process died?
         if len(msg.bulk) == 0:
-            logging.info("Terminated server side: " + self.uuid.decode())
-            self._internal_destroy(with_command=False)
+            logging.info("Terminated server side: %s (%d)" % (self.uuid.decode(), msg.params['returncode']))
+            self.mark_as_dead()
+            if self.termination_callback is not None:
+                self.termination_callback(self, msg.params['returncode'])
+            return
+
+        # Stderr?
+        if 'stderr' in msg.params:
+            if self.stderr_callback is not None:
+                self.stderr_callback(self, msg.bulk)
             return
 
         # Otherwise we're just data
@@ -83,4 +94,4 @@ class Process(Killable):
             self.data_callback(self, msg.bulk)
 
     def __repr__(self):
-        return "<tfnz.process.Process object at %x (uuid=%s)>" % (id(self), str(self.uuid))
+        return "<tfnz.process.Process object at %x (uuid=%s)>" % (id(self), self.uuid.decode())

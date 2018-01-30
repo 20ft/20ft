@@ -18,21 +18,25 @@ import termios  # this *is* used and *can* be found
 import tty
 import select
 import re
+import logging
 from subprocess import check_call, CalledProcessError
 from messidge import default_location
 from tfnz.location import Location
 
 
-def base_argparse(progname):
+def base_argparse(progname, location=True):
     parser = argparse.ArgumentParser(prog=progname)
-    connection_group = parser.add_argument_group('connection options')
-    connection_group.add_argument('--location', help='use a non-default location', metavar='x.20ft.nz')
-    connection_group.add_argument('--local', help='a non-dns ip for the location', metavar='x.local')
+    if location:
+        connection_group = parser.add_argument_group('connection options')
+        connection_group.add_argument('--location', help='use a non-default location', metavar='x.20ft.nz')
+        connection_group.add_argument('--local', help='a non-dns ip for the location', metavar='x.local')
     return parser
 
 
-def generic_cli(parser, implementations, *, quiet=True):
+def generic_cli(parser, implementations, *, quiet=True, location=True):
     args = parser.parse_args()
+    dl = None
+    loc = None
 
     if 'command' not in args:
         args.command = None
@@ -42,25 +46,29 @@ def generic_cli(parser, implementations, *, quiet=True):
         return
 
     # construct the location
-    try:
-        dl = default_location(prefix="~/.20ft") if args.location is None else args.location
-    except RuntimeError:
-        print("There does not appear to be a 20ft account on this machine.", file=sys.stderr)
-        sys.exit(1)
+    if location:
+        try:
+            dl = default_location(prefix="~/.20ft") if args.location is None else args.location
+        except RuntimeError:
+            print("There does not appear to be a 20ft account on this machine.", file=sys.stderr)
+            sys.exit(1)
 
     # go
-    location = None
     try:
-        location = Location(dl, location_ip=args.local, quiet=quiet)
-        implementations[args.command](location, args)
+        if location:
+            loc = Location(dl, location_ip=args.local, quiet=quiet)
+        else:
+            if not quiet:
+                logging.basicConfig(level=logging.DEBUG)
+        implementations[args.command](loc, args)
     except ValueError as e:
         print(str(e))
         exit(1)
     except KeyboardInterrupt:
         exit(1)
     finally:
-        if location is not None:
-            location.disconnect()
+        if loc is not None:
+            loc.disconnect()
     exit(0)
 
 
@@ -131,6 +139,7 @@ WorkingDirectory=%s
 KillSignal=SIGINT
 TimeoutStopSec=5
 Restart=always
+RestartSec=5
 User=%s
 Group=%s
 
@@ -180,12 +189,7 @@ class Interactive:
         sys.stdout.buffer.write(parts[0] + (parts[1] if len(parts) > 1 else b''))
         sys.stdout.flush()
 
-    @staticmethod
-    def stdout_flush(out):
-        sys.stdout.buffer.write(out)
-        sys.stdout.flush()
-
-    def termination_callback(self, ctr):
+    def termination_callback(self, ctr, returncode):
         self.running = False
         if self.term_attr is not None:
             termios.tcsetattr(sys.stdout.fileno(), termios.TCSANOW, self.term_attr)

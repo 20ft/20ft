@@ -15,6 +15,7 @@ import logging
 import socket
 import time
 import requests
+import requests.exceptions
 from typing import Union, List, Optional
 from base64 import b64encode
 from subprocess import run, CalledProcessError, DEVNULL
@@ -79,9 +80,9 @@ class Location(Waitable):
         self.wait_until_ready()  # doesn't return until a resource offer is made
         self.conn.loop.register_on_idle(self._heartbeat)
 
-    def disconnect(self):
+    def disconnect(self, container=None, returncode=0):
         """Disconnect from the location - without calling this the object cannot be garbage collected"""
-        # the container is passed if you use 'disconnect' as a termination function on a container
+        # the container and returncode are passed if you use 'disconnect' as a termination function on a container
         # i.e. it needs to be there, don't take it off!
         if self.conn is None:  # already disconnected
             return
@@ -91,10 +92,12 @@ class Location(Waitable):
         self.endpoints.clear()
         for tunnel in list(self.tunnels.values()):
             tunnel.destroy()
-        self.tunnels.clear()
+        for node in self.nodes.values():
+            for container in list(node.containers.values()):
+                for server in list(container.ssh_servers.values()):
+                    server.stop()
         self.conn.disconnect()
         self.conn = None
-        self.nodes.clear()
 
     def node(self) -> Node:
         """Returns a node.
@@ -150,7 +153,7 @@ class Location(Waitable):
         :return: A list of Volume objects."""
         return list(self.volumes.values())
 
-    def volume(self, key: Union[bytes, str]) -> Volume:
+    def volume(self, key: Union[bytes, str]) -> Taggable:
         """Return the volume with this uuid, tag or display_name.
 
         :param key: The uuid or tag of the volume object to be returned.
@@ -175,18 +178,24 @@ class Location(Waitable):
         msg = self.conn.send_blocking_cmd(b'find_tag', {'tag': tag})
         return ExternalContainer(self.conn, msg.params['uuid'], msg.params['node'], msg.params['ip'])
 
-    def ensure_image_uploaded(self, docker_image_id: str, descr: Optional[dict]=None):
+    def ensure_image_uploaded(self, docker_image_id: str, descr: Optional[dict]=None) -> List[str]:
         """Sends missing docker layers to the location.
 
         :param docker_image_id: use the short form id or name:tag
         :param descr: a previously found docker description
+        :return: A list of layer sha256 identifiers
 
         This is not a necessary step and is implied when spawning a container unless specifically disabled.
         The layers are uploaded on a background thread."""
 
-        # Send the missing layers (if any)
+        # Get a description
         if descr is None:
             descr = Docker.description(docker_image_id, self.conn)
+        else:
+            # update if an explicit description has been passed
+            self.conn.send_cmd(b'cache_description', {'image_id': docker_image_id, 'description': descr})
+
+        # Send the missing layers (if any)
         layers = Sender.layer_stack(descr)
         to_upload = Sender.upload_requirements(layers, self.conn)  # if none, does not need a local docker
         logging.info("Ensuring layers (%d) are uploaded for: %s" % (len(layers), docker_image_id))
@@ -229,38 +238,48 @@ class Location(Waitable):
 
         # poll until it's alive
         url = 'http://%s:%d/%s' % (fqdn, tnl.localport(), path if path is not None else '')
-        attempts_remaining = 60
+        attempts_remaining = 30
         while True:
             try:
-                r = requests.get(url)
+                r = requests.get(url, timeout=2)
                 if r.status_code == 200:
                     logging.info("Connected onto: " + url)
                     break
-            except ConnectionError:
+            except (ConnectionError, requests.exceptions.ReadTimeout):
                 pass
             attempts_remaining -= 1
             if attempts_remaining == 0:
                 raise ValueError("Could not connect to: " + url)
-            time.sleep(0.5)
+            time.sleep(1)
         return tnl
 
-    def _destroy_tunnel(self, tunnel: Tunnel, container=None):
+    def _destroy_tunnel(self, tunnel: Tunnel, container=None, with_command=True):
         # Called from Container
         if container is not None:
-            if tunnel.container != container:
+            if tunnel.container() != container:
                 raise ValueError("Tried to destroy a tunnel actually connected to a different container")
-        tunnel.destroy()
+        tunnel.destroy(with_command)
         del self.tunnels[tunnel.uuid]
 
     def _from_proxy(self, msg):
         try:
-            self.tunnels[msg.uuid].from_proxy(msg)
+            tunnel = self.tunnels[msg.uuid]
         except KeyError:
-            logging.debug("Data arrived from a proxy we already closed")
+            logging.debug("Data apparently from an already removed tunnel (dropped)")
+            return
+        try:
+            tunnel.from_proxy(msg)
+        except KeyError:
+            logging.debug("Data arrived from a proxy we seemingly already closed")
 
     def _close_proxy(self, msg):
         try:
-            self.tunnels[msg.uuid].close_proxy(msg)
+            tunnel = self.tunnels[msg.uuid]
+        except KeyError:
+            logging.debug("Asked to close a proxy on an already removed tunnel (dropped)")
+            return
+        try:
+            tunnel.close_proxy(msg)
         except KeyError:
             logging.debug("Asked to close a proxy that we already closed")
 

@@ -16,7 +16,7 @@ Thankfully there's a better way to effect a dynamic configuration and that's by 
 
     location = Location()
     preboot = [('/usr/share/nginx/html/index.html', 'Hello World!')]
-    container = location.ranked_nodes()[0].spawn_container('nginx', pre_boot_files=preboot)
+    container = location.node().spawn_container('nginx', pre_boot_files=preboot)
     container.attach_browser()
     signal.pause()
 
@@ -29,7 +29,7 @@ It's also possible to reboot a running container, either with or without resetti
 
     from tfnz.location import Location
 
-    node = Location().ranked_nodes()[0]
+    node = Location().node()
     container = node.spawn_container('nginx')
     container.put("/usr/new/path", b'Some data')
     print(container.fetch("/usr/new/path"), flush=True)
@@ -59,7 +59,7 @@ The image used in these examples is a fairly heavy Apache/Mezzanine/Django/Postg
     location.ensure_image_uploaded('337c501c333c')
     logging.info("-----Starting")
     for n in range(0, 10):
-        container = location.ranked_nodes()[0].spawn_container('337c501c333c', no_image_check=True)
+        container = location.node().spawn_container('337c501c333c', no_image_check=True)
         container.wait_http_200(fqdn="www.atomicdroplet.com")
     logging.info("-----Finished")
 
@@ -88,7 +88,7 @@ Results in::
     containers = []
     logging.info("-----Starting")
     for n in range(0, 10):
-        container = location.ranked_nodes()[0].spawn('337c501c333c', no_image_check=True)
+        container = location.node().spawn('337c501c333c', no_image_check=True)
         containers.append(container)
     for container in containers:
         container.wait_http_200(fqdn="www.atomicdroplet.com")

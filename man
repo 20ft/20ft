@@ -1,4 +1,4 @@
-apps=(tf tfvolumes tfdomains tfacctbak tfresources tfcache)
+apps=(tf tfvolumes tfdomains tfacctbak tfresources tfcache tfdescribe)
 for app in ${apps[*]}; do
 	curl -s https://20ft.nz/$app.1 > /usr/local/share/man/man1/$app.1
 done
