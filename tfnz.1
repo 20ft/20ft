@@ -1,16 +1,16 @@
-.TH TF(1)
+.TH TFNZ(1)
 .SH NAME
-tf - launch a container on 20ft.nz
+tfnz - launch a container on 20ft.nz
 .SH SYNOPSIS
-\fBtf\fR \-h | \fBtf\fR --help
+\fBtfnz\fR \-h | \-\-help
 
-\fBtf\fR [option]... source
+\fBtfnz\fR [option]... source
 
-\fBtf\fR --systemd user@my.server.com [option]... source
+\fBtfnz\fR --systemd user@my.server.com [option]... source
 
 
 .SH DESCRIPTION
-.B tf
+.B tfnz
 launches containers or scripts on 20ft.nz, passes environment variables, selects a starting command, connects stdio, copies pre-boot files, mounts persistent volumes, port maps onto the container, and publishes to the web. For developers it can create an ssh/sftp server, and write a systemd unit file to a server.
 
 The source is assumed to be a docker id in either the 'hex' or 'name' form; or '.' implies the most recently added image in the local docker daemon.
@@ -53,7 +53,7 @@ Create a TCP tunnel between localhost and the container on the given local and d
 Choose an alternate command/entrypoint into the container.
 .TP
 .BR \-w,\ --web\fR\ [subdomain.]wip.my.com[:www.my.com[:certname]]
-Publish port 80 of the container to a web endpoint. Publishing to a subdomain is enabled by creating a wildcard DNS entry (i.e. *.wip). Applications which expect a given 'Host' header can have this set with the rewrite (second) option. To host behind ssl pass a certificate name where tf will look for certname.crt and certname.key. Intermediate certs will need to be cat'ed onto the end of the main certificate.
+Publish port 80 of the container to a web endpoint. Publishing to a subdomain is enabled by creating a wildcard DNS entry (i.e. *.wip). Applications which expect a given 'Host' header can have this set with the rewrite (second) option. To host behind ssl pass a certificate name where tfnz will look for certname.crt and certname.key. Intermediate certs will need to be cat'ed onto the end of the main certificate.
 
 .TP
 .BR \-s,\ \-\-ssh\fR\ port
@@ -64,7 +64,7 @@ Launch the container but don't run the entrypoint or command.
 
 .TP
 .BR \-\-systemd\fR\ user@server.my.com
-Write a systemd unit on a server instead of running tf locally. For an image tagged myco/image it will create a subdirectory of the user's home directory called myco-image and place any necessary resources in there; then create and start a systemd service called myco-image with sensible defaults.
+Write a systemd unit on a server instead of running tfnz locally. For an image tagged myco/image it will create a subdirectory of the user's home directory called myco-image and place any necessary resources in there; then create and start a systemd service called myco-image with sensible defaults.
 
 .TP
 .BR \-\-identity\fR\ ~/.ssh/some_id.pem
@@ -75,26 +75,26 @@ Use the given identity file to connect via ssh.
 Launch the most recently built Docker image and map local port 8080 to remote port 80.
 .PP
 .RS
-tf -p 8080:80 .
+tfnz -p 8080:80 .
 .RE
 
 .PP
 Launch the stock nginx image mapping port 8080 to 80, with a pre-existing volume for the http content and the ability to ssh/sftp into the container.
 .PP
 .RS
-tf -p 8080:80 -m persistent_web:/usr/share/nginx/html --ssh 2222 nginx
+tfnz -p 8080:80 -m persistent_web:/usr/share/nginx/html --ssh 2222 nginx
 .RE
 
 .PP
 Launch a docker image (possibly only held locally), map to web endpoint, rewrite the http-request header to client.com, and use an ssl certificate given by the combination of wip.crt and wip.key.
 .PP
 .RS
-tf -w wip.my.com:client.com:wip my/image
+tfnz -w wip.my.com:client.com:wip my/image
 .RE
 
 .PP
 Create a systemd unit to run the above operation as a service on a server (noting that the web traffic will still be served directly from the 20ft cluster).
 .PP
 .RS
-tf --systemd -w wip.my.com:client.com:wip my/image
+tfnz --systemd -w wip.my.com:client.com:wip my/image
 .RE

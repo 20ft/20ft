@@ -12,7 +12,7 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 # It does, indeed, need *all* these headers, and 'make' etc. etc.
-# docker build --squash -t tfnz/tf .
+# docker build --squash -t tfnz/tfnz .
 
 FROM alpine
 RUN apk update

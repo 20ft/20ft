@@ -54,7 +54,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         return None
 
     # right, get on with it
-    parser = base_argparse('tf')
+    parser = base_argparse('tfnz')
     launch_group = parser.add_argument_group('launch options')
     launch_group.add_argument('-v', '--verbose', help='verbose logging', action='store_true')
     launch_group.add_argument('-q', '--quiet', help='no logging', action='store_true')
@@ -80,14 +80,14 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                               metavar="~/.ssh/some_id.pem")
 
     parser.add_argument('source', help="if '.' runs the most recently added docker image; "
-                                       "if ends in '.py' tries to run a function implementation; "
+#                                       "if ends in '.py' tries to run a function implementation; "
                                        "else this is the tag or hex id of an image to run.")
 
     parser.add_argument('command', help='run this command/entrypoint instead', nargs='?')
     parser.add_argument('args', help='arguments to pass to a script or subprocess', nargs=argparse.REMAINDER)
 
     args = parser.parse_args()
-    function_implementation = len(args.source) > 3 and args.source[-3:] == ".py"
+    # function_implementation = len(args.source) > 3 and args.source[-3:] == ".py"
 
     # collect any pre-boot files
     preboot = []
@@ -224,21 +224,21 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         args.command.extend(args.args)
 
     # try to launch as a method implementation
-    if function_implementation:
-        try:
-            sys.path.append(os.path.dirname(os.path.expanduser(args.source)))
-            sys.path.append(os.getcwd())
-            imp = import_module(os.path.basename(args.source[:-3]))
-            imp.tf_main(location, environment, portmap, preboot, volumes, args.command, args.args)
-            signal.pause()
-        except (ImportError, TypeError, AttributeError):
-            print("Failed to import or run function in: " + args.source, file=sys.stderr)
-            print("The function to implement is: "
-                  "def tf_main(location, environment, portmap, preboot, volumes, cmd, args):",
-                  file=sys.stderr)
-            return location
-        except KeyboardInterrupt:
-            return location
+    # if function_implementation:
+    #     try:
+    #         sys.path.append(os.path.dirname(os.path.expanduser(args.source)))
+    #         sys.path.append(os.getcwd())
+    #         imp = import_module(os.path.basename(args.source[:-3]))
+    #         imp.tf_main(location, environment, portmap, preboot, volumes, args.command, args.args)
+    #         signal.pause()
+    #     except (ImportError, TypeError, AttributeError):
+    #         print("Failed to import or run function in: " + args.source, file=sys.stderr)
+    #         print("The function to implement is: "
+    #               "def tf_main(location, environment, portmap, preboot, volumes, cmd, args):",
+    #               file=sys.stderr)
+    #         return location
+    #     except KeyboardInterrupt:
+    #         return location
 
     # try to launch the container
     interactive = Interactive(location) if args.interactive else None
