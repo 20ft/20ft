@@ -38,11 +38,19 @@ class Container(Waitable, Killable, Connectable):
         self.stdout_callback = stdout_callback
         self.termination_callback = termination_callback
 
-    def ip(self):
+    def start(self):
+        """Start a container that was spawned with sleep=True"""
+        self.conn().send_cmd(b'wake_container', {'node': self.parent().pk, 'container': self.uuid})
+
+    def private_ip(self):
         """Reports the container's ip address"""
         self.ensure_alive()
         self.wait_until_ready()
         return self.ip
+
+    def node(self):
+        """Returns the node object this container is running on"""
+        return self.parent()
 
     def stdin(self, data: bytes):
         """Writes the data into the container's stdin.
@@ -53,6 +61,15 @@ class Container(Waitable, Killable, Connectable):
         self.conn().send_cmd(b'stdin_container', {'node': self.parent().pk,
                                                   'container': self.uuid},
                              bulk=data)
+
+    def wait_tcp(self, dest_port):
+        """Creates and destroys a single connection onto this container and a given port.
+
+        Since it creates AND destroys you wouldn't want to be using this if there's only a single .accept call.
+
+        :param dest_port: destination tcp port < 1024 is fine."""
+        self.ensure_alive()
+        self.location()._wait_tcp(self, dest_port)
 
     def attach_tunnel(self, dest_port: int, localport: Optional[int]=None, bind: Optional[str]=None) -> Tunnel:
         """Creates a TCP proxy between localhost and a container.
@@ -105,6 +122,7 @@ class Container(Waitable, Killable, Connectable):
         :param container: The container that will be allowed to call."""
         self.ensure_alive()
         self.wait_until_ready()
+        container.wait_until_ready()
         super().allow_connection_from(container)
 
     def disallow_connection_from(self, container: 'Container'):
@@ -324,8 +342,8 @@ class Container(Waitable, Killable, Connectable):
             logging.debug("Message arrived for an unknown process: " + msg.uuid.decode())
             return
 
-        # logging.debug("Received data from process: " + msg.uuid.decode())
-        # logging.debug(msg.bulk.decode())
+        logging.debug("Received data from process: " + msg.uuid.decode())
+        logging.debug(msg.bulk.decode())
         self.processes[msg.uuid].give_me_messages(msg)
 
     def __repr__(self):

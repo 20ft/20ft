@@ -27,14 +27,15 @@ from tfnz.container import Container
 from tfnz.volume import Volume
 from tfnz.docker import Docker
 from tfnz.endpoint import Cluster
+from tfnz.components.postgresql import Postgresql
 
 
 class TfTest(TestCase):
     location = None
-    # location_string = "sydney.20ft.nz"
-    # location_cert = "~/.ssh/aws_sydney.pem"
-    location_string = "tiny.20ft.nz"
-    location_cert = "~/.ssh/id_rsa"
+    location_string = "sydney.20ft.nz"
+    location_cert = "~/.ssh/aws_sydney.pem"
+    # location_string = "tiny.20ft.nz"
+    # location_cert = "~/.ssh/id_rsa"
     disable_laksa_restart = True
 
     @classmethod
@@ -76,7 +77,6 @@ class TfTest(TestCase):
     def test_env_vars(self):
         node = TfTest.location.node()
         container = node.spawn_container('tfnz/env_test', env=[('TEST', 'testy')])
-        # tunnel = container.attach_tunnel(80, 8000)
         tunnel = container.wait_http_200()
         time.sleep(1)
 
@@ -85,6 +85,11 @@ class TfTest(TestCase):
         vars = reply.text.split('\n')
         var_dict = {var.split('=')[0]: var.split('=')[1] for var in vars[:-1]}
         self.assertTrue(var_dict['TEST'] == "testy", "Failed to pass environment variable")
+
+        # do commands have the environment passed?
+        stdout, stderr, rtn = container.run_process('echo $TEST')
+        self.assertTrue(stdout[:-1] == b'testy', "Failed to pass environment variable to running process")
+
         container.destroy_tunnel(tunnel)
         node.destroy_container(container)
 
@@ -96,6 +101,13 @@ class TfTest(TestCase):
         ps_result = container.run_process('/bin/ps ax')  # tests that we can still run processes
         self.assertTrue('sh' in ps_result[0].decode())
         self.assertTrue('apache' not in ps_result[0].decode())
+
+        # so start it
+        container.start()
+        time.sleep(5)
+        ps_result = container.run_process('/bin/ps ax')
+        self.assertTrue('apache' in ps_result[0].decode())
+
         node.destroy_container(container)
 
     def test_spawn_preboot(self):
@@ -171,6 +183,16 @@ class TfTest(TestCase):
             if vol is not None:
                 TfTest.location.destroy_volume(vol)
             TfTest.location.destroy_volume(vol2)
+
+    def test_postgres(self):
+        vol = TfTest.location.create_volume()
+        try:
+            postgres = Postgresql(TfTest.location, vol, log_callback=lambda _, l: print(l.decode()))
+            postgres.wait_until_ready()
+            self.assertTrue(True)  # if it hasn't bounced out by now
+        finally:
+            postgres.node.destroy_container(postgres.ctr)
+            TfTest.location.destroy_volume(vol)
 
     def test_tagging(self):
         # a tagged object needs a user pk even if it's only for this user
@@ -506,16 +528,16 @@ class TfTest(TestCase):
         # cleaning
         c2.destroy_tunnel(t2)
 
-    # def test_multiple_connect(self):
-    #     # should be banned by the geneva convention
-    #     locs = [Location() for _ in range(0, 5)]
-    #     nodes = [loc.node() for loc in locs]
-    #     containers = [node.spawn_container('alpine') for node in nodes]
-    #     self.assertTrue(True)
-    #     for loc in locs:
-    #         loc.disconnect()
-    #     containers.clear()
-    #     locs.clear()
+    def test_multiple_connect(self):
+        # should be banned by the geneva convention
+        locs = [Location() for _ in range(0, 5)]
+        nodes = [loc.node() for loc in locs]
+        containers = [node.spawn_container('alpine') for node in nodes]
+        self.assertTrue(True)
+        for loc in locs:
+            loc.disconnect()
+        containers.clear()
+        locs.clear()
 
     def test_portscan_connect(self):
         # something somewhere is messing with our socket
@@ -701,7 +723,7 @@ class TfTest(TestCase):
         self._destructive_behaviour('dd if=/dev/zero of=/zeroes bs=1M')
 
     def test_contain_fork_bomb(self):
-        self._destructive_behaviour("bash bomb.sh",
+        self._destructive_behaviour("bomb.sh",
                                     ["sh -c \"echo \'sh $0 & sh $0\' > bomb.sh\"", 'chmod +x bomb.sh'],
                                     'debian')
 

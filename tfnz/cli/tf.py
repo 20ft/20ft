@@ -18,7 +18,10 @@ import sys
 import re
 import os
 import os.path
+import argparse
+import signal
 from sys import argv, stderr
+from importlib import import_module
 from messidge import default_location, create_account
 from tfnz.location import Location
 from tfnz.volume import Volume
@@ -35,8 +38,11 @@ def main_impl():
         # there is no default location
         if len(argv) != 3:
             print("""
-There is no a 20ft account on this machine, you need to request 
-access from your administrator.
+Either there is no a 20ft account on this machine, and you need 
+to request access from your administrator; or the ~/.20ft/default_location
+file has been deleted. Run something like...
+
+    echo 'location.20ft.nz' > ~/.20ft/default_location
 
 If you already have an account on another machine you can merely 
 copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
@@ -50,36 +56,43 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # right, get on with it
     parser = base_argparse('tf')
     launch_group = parser.add_argument_group('launch options')
-    launch_group.add_argument(('-v', '--verbose'), help='verbose logging', action='store_true')
-    launch_group.add_argument(('-q', '--quiet'), help='no logging', action='store_true')
-    launch_group.add_argument(('-i', '--interactive'), help='interactive', action='store_true')
-    launch_group.add_argument(('-e', '--env'), help='set an environment variable', action='append', metavar='VAR=value')
-    launch_group.add_argument(('-f', '--file'), help='write a pre-boot file', action='append', metavar='src:dest')
-    launch_group.add_argument(('-m', '--mount'), help='mount a volume', action='append', metavar='uuid:mountpoint')
-    launch_group.add_argument(('-p', '--publish'), help='add a local->remote tcp proxy', action='append',
+    launch_group.add_argument('-v', '--verbose', help='verbose logging', action='store_true')
+    launch_group.add_argument('-q', '--quiet', help='no logging', action='store_true')
+    launch_group.add_argument('-ti', '--interactive', help='interactive, connect stdin and stdout', action='store_true')
+    launch_group.add_argument('-e', '--env', help='set an environment variable, possibly from current',
+                              action='append', metavar='[VAR=value | VAR]')
+    launch_group.add_argument('-f', '--file', help='write a pre-boot file', action='append', metavar='src:dest')
+    launch_group.add_argument('-m', '--mount', help='mount a volume', action='append',
+                              metavar='[uuid:mountpoint | tag:mountpoint]')
+    launch_group.add_argument('-p', '--publish', help='add a local->remote tcp proxy', action='append',
                               metavar='8080:80')
-    launch_group.add_argument(('-c', '--command', '--entrypoint'),
-                              help='use this command/entrypoint (in container) to start', metavar='script.sh')
-    launch_group.add_argument(('-w', '--web'), help='publish on web endpoint',
+    launch_group.add_argument('-w', '--web', help='publish on web endpoint',
                               metavar='subdomain.my.com[:www.my.com[:certname]]')
-    interactive_group = parser.add_argument_group('local/interactive options')
-    interactive_group.add_argument(('-s', '--ssh'), help='create an ssh/sftp wrapped shell on given port',
+    development_group = parser.add_argument_group('development options')
+    development_group.add_argument('--ssh', help='create an ssh/sftp wrapped shell on given port',
                                    metavar='2222')
-    interactive_group.add_argument(('-z', '--sleep'), help='launch the container asleep (instead of entrypoint)',
+    development_group.add_argument('-s', help='shorthand for --ssh 2222', action='store_true')
+    development_group.add_argument('-z', '--sleep', help='launch the container asleep (instead of entrypoint)',
                                    action='store_true')
     server_group = parser.add_argument_group('server options')
     server_group.add_argument('--systemd', help='create a systemd service', metavar='user@server.my.com')
     server_group.add_argument('--identity', help='specify an identity file to use with --systemd',
                               metavar="~/.ssh/some_id.pem")
 
-    parser.add_argument('source', help="if '.', runs the most recently added docker image; "
+    parser.add_argument('source', help="if '.' runs the most recently added docker image; "
+                                       "if ends in '.py' tries to run a function implementation; "
                                        "else this is the tag or hex id of an image to run.")
+
+    parser.add_argument('command', help='run this command/entrypoint instead', nargs='?')
+    parser.add_argument('args', help='arguments to pass to a script or subprocess', nargs=argparse.REMAINDER)
+
     args = parser.parse_args()
+    function_implementation = len(args.source) > 3 and args.source[-3:] == ".py"
 
     # collect any pre-boot files
     preboot = []
-    if args.f is not None:
-        for e in args.f:
+    if args.file is not None:
+        for e in args.file:
             match = re.match('^[\w:]*[\w.\-\\/]+:[\w.\-\\/]+$', e)
             if not match:
                 print("Pre-boot copies need to be in source:destination pairs", file=sys.stderr)
@@ -102,9 +115,9 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     rewrite = None
     cert = None
     fqdns = None
-    if args.w is not None:
+    if args.web is not None:
         # split into endpoint:rewrite:certname (rewrite and certname are optional)
-        fqdns = args.w.split(':')
+        fqdns = args.web.split(':')
         if len(fqdns) == 0 or len(fqdns[0]) == 0:
             print("Cannot publish to an endpoint without an address", file=sys.stderr)
             return None
@@ -125,7 +138,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # connect
     location = None
     try:
-        location = Location(args.location, location_ip=args.local, quiet=args.q, debug_log=args.v)
+        location = Location(args.location, location_ip=args.local, quiet=args.quiet, debug_log=args.verbose)
     except BaseException as e:
         print("Failed while connecting to location: " + str(e), file=sys.stderr)
         return location
@@ -142,14 +155,20 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # create env-vars
     e_vars = set()
     environment = []
-    if args.e is not None:
-        for e in args.e:
-            match = re.match('[0-9A-Za-z:_]+=', e)
-            if not match:
-                print("Environment variables need to be passed as 'name=value' pairs", file=sys.stderr)
+    if args.env is not None:
+        for e in args.env:
+            match_single = re.match('^[[0-9A-Za-z:_]+$', e)
+            if match_single:
+                if e not in os.environ:
+                    print("Environment variable \'%s\' was not found in the local environment.", file=sys.stderr)
+                    return location
+                e += '=\'%s\'' % os.environ[e]
+            match_extended = re.match('^[0-9A-Za-z:_]+=', e)
+            if not match_extended:
+                print("Environment variables need to be passed as 'name' or 'name=value' pairs", file=sys.stderr)
                 print("....error in '%s'" % e, file=sys.stderr)
                 return location
-            variable = match.group(0)[:-1]
+            variable = match_extended.group(0)[:-1]
             if variable in e_vars:
                 print("Can only pass one value per environment variable.", file=sys.stderr)
                 print("....error in '%s'" % e, file=sys.stderr)
@@ -161,8 +180,8 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # create portmaps
     l_ports = set()
     portmap = []
-    if args.p is not None:
-        for e in args.p:
+    if args.publish is not None:
+        for e in args.publish:
             match = re.match('\d+:\d+$', e)
             if not match:
                 print("Portmaps need to be passed as number:number pairs", file=sys.stderr)
@@ -179,8 +198,8 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # create volume mounts ensuring they don't overlap
     volumes = []
     mount_points = set()
-    if args.m is not None:
-        for m in args.m:
+    if args.mount is not None:
+        for m in args.mount:
             if ':' not in m:
                 print("Volumes need to be passed as uuid:mountpoint pairs", file=sys.stderr)
                 print("....error in '%s'" % m, file=sys.stderr)
@@ -199,20 +218,42 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                 return location
             mount_points.add(mount)
 
+    # overloaded command? args? (makes it into a list)
+    if args.command is not None and args.args is not None:
+        args.command = [args.command]
+        args.command.extend(args.args)
+
+    # try to launch as a method implementation
+    if function_implementation:
+        try:
+            sys.path.append(os.path.dirname(os.path.expanduser(args.source)))
+            sys.path.append(os.getcwd())
+            imp = import_module(os.path.basename(args.source[:-3]))
+            imp.tf_main(location, environment, portmap, preboot, volumes, args.command, args.args)
+            signal.pause()
+        except (ImportError, TypeError, AttributeError):
+            print("Failed to import or run function in: " + args.source, file=sys.stderr)
+            print("The function to implement is: "
+                  "def tf_main(location, environment, portmap, preboot, volumes, cmd, args):",
+                  file=sys.stderr)
+            return location
+        except KeyboardInterrupt:
+            return location
+
     # try to launch the container
-    interactive = Interactive(location) if args.i else None
+    interactive = Interactive(location) if args.interactive else None
     try:
         node = location.node()
         container = node.spawn_container(args.source,
                                          env=environment,
                                          pre_boot_files=preboot,
                                          volumes=volumes,
-                                         stdout_callback=(interactive.stdout_callback if args.i
+                                         stdout_callback=(interactive.stdout_callback if args.interactive
                                                           else lambda _, out: sys.stdout.buffer.write(out)),
-                                         termination_callback=(interactive.termination_callback if args.i
+                                         termination_callback=(interactive.termination_callback if args.interactive
                                                                else location.disconnect),
-                                         command=args.c,
-                                         sleep=args.z)
+                                         command=args.command,
+                                         sleep=args.sleep)
         container.wait_until_ready()  # a transport for exceptions
     except BaseException as e:
         print("Failed while spawning container: " + str(e), file=sys.stderr)
@@ -227,14 +268,14 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         container.create_ssh_server(2222 if args.s else int(args.ssh))
 
     # publish to an endpoint?
-    if args.w is not None:
+    if args.web is not None:
         container.wait_until_ready()
         clstr = Cluster([container], rewrite=rewrite)
         ep = location.endpoint_for(endpoint)
         ep.publish(clstr, fqdns[0], ssl=cert)
 
     # wait until quit
-    if args.i:
+    if args.interactive:
         interactive.stdin_loop(container)
     else:
         try:

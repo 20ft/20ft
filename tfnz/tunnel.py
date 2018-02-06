@@ -148,7 +148,7 @@ class Tunnel(Killable):
 
         # send nothing to force the connection open on the far end - some servers like to talk first
         self.connection().send_cmd(b'to_proxy', {"tunnel": self.uuid,
-                                               "proxy": fd}, bulk=b'')
+                                                 "proxy": fd}, bulk=b'')
 
         logging.debug("Accepted proxy connection, fd: " + str(fd))
 

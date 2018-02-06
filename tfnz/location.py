@@ -142,10 +142,21 @@ class Location(Waitable):
         :param volume: The volume to be destroyed."""
         if not isinstance(volume, Volume):
             raise TypeError()
-        self.conn.send_blocking_cmd(b'destroy_volume', {'user': self.user_pk,
-                                                        'volume': volume.uuid})
-        logging.info("Destroyed volume: " + volume.uuid.decode())
-        self.volumes.remove(volume)
+        attempts = 0
+        while True:
+            try:
+                self.conn.send_blocking_cmd(b'destroy_volume', {'user': self.user_pk,
+                                                                'volume': volume.uuid})
+                logging.info("Destroyed volume: " + volume.uuid.decode())
+                self.volumes.remove(volume)
+                return
+            except ValueError as e:
+                # maybe still mounted, we have a limited number of retries
+                if attempts == 20:
+                    raise e
+                logging.debug("Could not destroy volume, trying again...")
+                attempts += 1
+                time.sleep(0.5)
 
     def all_volumes(self) -> List[Volume]:
         """Returns a list of all volumes on this node.
@@ -153,7 +164,7 @@ class Location(Waitable):
         :return: A list of Volume objects."""
         return list(self.volumes.values())
 
-    def volume(self, key: Union[bytes, str]) -> Taggable:
+    def volume(self, key: Union[bytes, str]) -> Volume:
         """Return the volume with this uuid, tag or display_name.
 
         :param key: The uuid or tag of the volume object to be returned.
@@ -223,6 +234,10 @@ class Location(Waitable):
         self.tunnels[tunnel.uuid] = tunnel
         tunnel.connect()  # connection done 'late' so we can get the tunnel into tunnels first
         return tunnel
+
+    def _wait_tcp(self, container, dest_port):
+        # called from Container - raises a ValueError if it cannot connect before the timeout
+        self.conn.send_blocking_cmd(b'wait_tcp', {'container': container.uuid, 'port': dest_port})
 
     def _wait_http_200(self, container, dest_port, fqdn, path, localport=None) -> Tunnel:
         # called from Container

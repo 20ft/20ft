@@ -1,8 +1,8 @@
 # Copyright (c) 2017 David Preece, All rights reserved.
-# 
+#
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 # WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
 # MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -101,12 +101,13 @@ class Docker:
     @staticmethod
     def _docker_warning():
         print("""
-    Cannot (and need to) connect to the docker socket.
+    Cannot (and need to) connect to the docker socket
+    -------------------------------------------------
     
-    --------------------------------------
-    Is docker running? You may need to run
-    sudo chmod 666 /var/run/docker.sock
-    --------------------------------------
+    The remote cache does not have a description for the combination of this image and this user.
+    If you think it should, have changed you which user account you're using?
+    Is docker running on this machine? 
+    You may need to run sudo chmod 666 /var/run/docker.sock
     """, file=sys.stderr)
         raise RuntimeError("Need a functioning local Docker")
 

@@ -1,8 +1,8 @@
 # Copyright (c) 2017 David Preece, All rights reserved.
-# 
+#
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 # WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
 # MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -91,9 +91,6 @@ class Node:
         # Make it go...
         descr = Docker.description(image, self.conn())
 
-        if sleep:
-            descr['Config']['Entrypoint'] = []
-            descr['Config']['Cmd'] = None
         if command is not None:
             descr['Config']['Entrypoint'] = []
             descr['Config']['Cmd'] = [command]  # will overwrite the container's config
@@ -112,6 +109,7 @@ class Node:
                                                   'env': env,
                                                   'volumes': vol_struct,
                                                   'pre_boot_files': pre_boot_files,
+                                                  'sleep': sleep,
                                                   'cookie': cookie},
                              uuid=uuid,
                              reply_callback=self._container_status_update)

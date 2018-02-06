@@ -51,7 +51,6 @@ class WebEndpoint:
         self.clusters = {}  # uuid to cluster
 
     def publish(self, cluster: Cluster, fqdn: str, *, ssl: Optional[Tuple]=None):
-        # ssl is a tuple of (certificate, key) with these being the actual data and not filenames
         # checks
         if not fqdn.endswith(self.domain):
             raise ValueError("Web endpoint for (%s) cannot publish: %s" % (self.domain, fqdn))
@@ -60,8 +59,9 @@ class WebEndpoint:
         # ssl check and read
         combined = None
         if ssl is not None:
-            if len(ssl) != 2:
-                raise ValueError("SSL needs to be a tuple of (certificate, key)")
+            if len(ssl) not in (2, 3):
+                raise ValueError("SSL needs to be a tuple of (cert.pem, key.pem) or "
+                                 "(cert.pem, key.pem, cert.intermediate")
             combined = ''
             with open(ssl[0]) as f:
                 combined += f.read()
