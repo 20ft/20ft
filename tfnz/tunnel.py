@@ -59,11 +59,8 @@ class Tunnel(Killable):
         self.socket = socket.socket()
         self.socket.setblocking(False)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            self.socket.bind(('0.0.0.0' if self.bind is None else self.bind, 0 if self.lp is None else self.lp))
-            self.lp = self.socket.getsockname()[1]
-        except OSError:
-            pass
+        self.socket.bind(('0.0.0.0' if self.bind is None else self.bind, 0 if self.lp is None else self.lp))
+        self.lp = self.socket.getsockname()[1]
         self.socket.listen()
         self.fd = self.socket.fileno()
         self.connection().loop.register_exclusive(self.fd, self.event, comment="listener for " + str(self))
@@ -234,5 +231,5 @@ class Tunnel(Killable):
         self.sess = rid
 
     def __repr__(self):
-        return "<tfnz.tunnel.Tunnel object at %x (uuid=%s port=%d)>" % \
-               (id(self), self.uuid.decode(), self.port)
+        return "<Tunnel '%s' localport=%d container=%s)>" % \
+               (self.uuid.decode(), self.port, self.container().uuid.decode())

@@ -14,7 +14,7 @@
 from setuptools import setup, find_packages
 
 setup(name='tfnz',
-      version='1.2.18',
+      version='1.2.20',
       author='David Preece',
       author_email='davep@20ft.nz',
       url='https://20ft.nz',
@@ -41,7 +41,7 @@ setup(name='tfnz',
           'Programming Language :: Python :: 3.6'
       ],
       entry_points={
-          'console_scripts': ['tfnz=tfnz.cli.tfnz:main',
+          'console_scripts': ['tfnz=tfnz.cli.tf:main',
                               'tfvolumes=tfnz.cli.tfvolumes:main',
                               'tfdomains=tfnz.cli.tfdomains:main',
                               'tfacctbak=tfnz.cli.tfacctbak:main',

@@ -171,6 +171,16 @@ class Location(Waitable):
         :return: A Volume object."""
         return self.volumes.get(self.user_pk, key)
 
+    def ensure_volume(self, key: Union[bytes, str]) -> Volume:
+        """Return the volume with this uuid, tag or display_name - create the volume if it doesn't exist.
+
+        :param key: The uuid or tag of the volume object to be returned.
+        :return: A Volume object."""
+        try:
+            return self.volumes.get(self.user_pk, key)
+        except KeyError:
+            return self.create_volume(key)
+
     def endpoint_for(self, fqdn: str) -> WebEndpoint:
         """Return a WebEndpoint for the given fqdn.
 
@@ -327,4 +337,4 @@ class Location(Waitable):
                  b'log': (['error', 'log'], False)}
 
     def __repr__(self):
-        return "<tfnz.location.Location object at %x (nodes=%d)>" % (id(self), len(self.nodes))
+        return "<Location '%s' nodes=%d>" % (self.location, len(self.nodes))

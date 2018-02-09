@@ -13,6 +13,8 @@
 
 import weakref
 import logging
+import requests
+import time
 from typing import List, Optional, Tuple
 from tfnz.container import Container
 
@@ -37,7 +39,7 @@ class Cluster:
         self.containers[container.uuid] = container
 
     def __repr__(self):
-        return "<tfnz.endpoint.Cluster object at %x (containers=%d)>" % (id(self), len(self.containers))
+        return "<Cluster '%s' containers=%d>" % (self.uuid, len(self.containers))
 
 
 class WebEndpoint:
@@ -82,11 +84,27 @@ class WebEndpoint:
         self.clusters[msg.uuid] = cluster
         return msg.uuid
 
+    @staticmethod
+    def wait_http_200(fqdn: str, *, ssl: Optional[bool]=False):
+        """Poll the gateway for an http 200 from this cluster"""
+        url = '%s://%s' % ('https' if ssl else 'http', fqdn)
+        attempts_remaining = 30
+        while True:
+            try:
+                r = requests.get(url, timeout=5)
+                if r.status_code == 200:
+                    break
+            except (ConnectionError, requests.exceptions.ReadTimeout):
+                pass
+            attempts_remaining -= 1
+            if attempts_remaining == 0:
+                raise ValueError("Could not connect to: " + url)
+            time.sleep(1)
+
     def unpublish(self, cluster: Cluster):
         self.conn().send_cmd(b'unpublish_web', {'uuid': cluster.uuid})
         logging.info("Unpublished: " + cluster.uuid.decode())
         del self.clusters[cluster.uuid]
 
     def __repr__(self):
-        return "<tfnz.endpoint.WebEndpoint object at %x (domain=%s publishing=%s)>" % \
-               (id(self), len(self.domain), ' '.join([c for c in self.clusters.keys()]))
+        return "<WebEndpoint '%s' domain=%s>" % (self.uuid.decode(), self.domain)

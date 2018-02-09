@@ -13,6 +13,7 @@
 
 
 # the method to implement is tf_main(location, node, environment, portmap, pass_args)
+# don't rename this as tfnz since it will clash with the tfnz module
 
 import sys
 import re
@@ -260,19 +261,31 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         return location
 
     # create the tunnels
-    for m in portmap:
-        container.attach_tunnel(m[1], m[0])
+    try:
+        for m in portmap:
+            container.attach_tunnel(m[1], m[0])
+    except OSError as e:
+        print("Failed while creating a tunnel onto the container: " + str(e))
+        return location
 
     # launch an ssh server? user/pass are anything/anything - you can only connect from localhost anyway
-    if args.ssh or args.s:
-        container.create_ssh_server(2222 if args.s else int(args.ssh))
+    try:
+        if args.ssh or args.s:
+            container.create_ssh_server(2222 if args.s else int(args.ssh))
+    except OSError as e:
+        print("Failed while creating an ssh server onto the container: " + str(e))
+        return location
 
     # publish to an endpoint?
-    if args.web is not None:
-        container.wait_until_ready()
-        clstr = Cluster([container], rewrite=rewrite)
-        ep = location.endpoint_for(endpoint)
-        ep.publish(clstr, fqdns[0], ssl=cert)
+    try:
+        if args.web is not None:
+            container.wait_until_ready()
+            clstr = Cluster([container], rewrite=rewrite)
+            ep = location.endpoint_for(endpoint)
+            ep.publish(clstr, fqdns[0], ssl=cert)
+    except ValueError as e:
+        print("Failed while publishing to an endpoint: " + str(e))
+        return location
 
     # wait until quit
     if args.interactive:

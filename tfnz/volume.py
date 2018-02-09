@@ -48,4 +48,4 @@ class Volume(Taggable):
         return None
 
     def __repr__(self):
-        return "<tfnz.volume.Volume object at %x (%s)>" % (id(self), self.namespaced_display_name())
+        return "<Volume '%s'>" % self.namespaced_display_name()

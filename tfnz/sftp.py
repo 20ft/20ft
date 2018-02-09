@@ -137,6 +137,3 @@ class SftpFile(SFTPHandle):
         logging.debug("Closed a file via sftp: " + self.filename)
         return SFTP_OK
 
-    def __repr__(self):
-        return "<tfnz.sftp.SftpFile object at %x (container=%s filename=%s)>" % \
-               (id(self), str(self.container().uuid), self.filename)

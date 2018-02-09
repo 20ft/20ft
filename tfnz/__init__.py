@@ -11,6 +11,8 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+__all__ = ['location', 'node', 'container', 'endpoint', 'volume', 'process', 'tunnel', 'docker']
+
 import logging
 import re
 import weakref
@@ -231,7 +233,7 @@ class TaggedCollection:
         if obj.tag_key() in self.objects:
             del self.objects[obj.tag_key()]
         self.uniques -= 1
-        
+
     def will_clash(self, user: bytes, uuid: bytes, tag: bytes) -> bool:
         if tag is not None:
             if (user, tag) in self.objects:
@@ -242,3 +244,6 @@ class TaggedCollection:
 
     def values(self):
         return set(self.objects.values())  # de-dupe
+
+    def __repr__(self):
+        return "<TaggedCollection uniques=%d>" % self.uniques

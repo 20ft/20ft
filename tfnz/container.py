@@ -63,12 +63,13 @@ class Container(Waitable, Killable, Connectable):
                              bulk=data)
 
     def wait_tcp(self, dest_port):
-        """Creates and destroys a single connection onto this container and a given port.
+        """Connects and disconnects a single connection onto this container and a given port.
 
-        Since it creates AND destroys you wouldn't want to be using this if there's only a single .accept call.
+        If your sevice is only capable of .accept'ing once, do not use this.
 
         :param dest_port: destination tcp port < 1024 is fine."""
         self.ensure_alive()
+        self.wait_until_ready()
         self.location()._wait_tcp(self, dest_port)
 
     def attach_tunnel(self, dest_port: int, localport: Optional[int]=None, bind: Optional[str]=None) -> Tunnel:
@@ -170,12 +171,14 @@ class Container(Waitable, Killable, Connectable):
 
     def run_process(self, remote_command: str, *,
                     data_callback: Optional[Callable]=None,
-                    stderr_callback: Optional[Callable]=None) -> (bytes, bytes, str):
+                    stderr_callback: Optional[Callable]=None,
+                    nolog: Optional[bool]=False) -> (bytes, bytes, str):
         """Run a process once, synchronously, without pty.
 
         :param remote_command: The command to run remotely.
         :param data_callback: A callback for arriving data - signature (object, bytes).
         :param stderr_callback: For data emitted by the process's stderr stream - signature (object, bytes).
+        :param nolog: Don't log this command (to hide sensitive data).
         :return: stdout from the process, stderr from the process, exit code (as string).
         """
         if isinstance(remote_command, list):
@@ -184,7 +187,8 @@ class Container(Waitable, Killable, Connectable):
         self.wait_until_ready()
 
         # Cool, go.
-        logging.info("Container (%s) running process: '%s'" % (self.uuid.decode(), remote_command))
+        if not nolog:
+            logging.info("Container (%s) running process: '%s'" % (self.uuid.decode(), remote_command))
 
         # get the node to launch the process for us
         # we need the uuid of the spawn command because it's used to indicate when the process has terminated
@@ -328,6 +332,10 @@ class Container(Waitable, Killable, Connectable):
         for tun in self.all_tunnels():
             self.location()._destroy_tunnel(tun, self, with_command=False)
 
+        # Destroy any ssh servers
+        for svr in self.ssh_servers.values():
+            self.destroy_ssh_server(svr)
+
         # Destroy (async)
         self.conn().send_cmd(b'destroy_container', {'node': self.parent().pk,
                                                     'container': self.uuid})
@@ -343,11 +351,11 @@ class Container(Waitable, Killable, Connectable):
             return
 
         logging.debug("Received data from process: " + msg.uuid.decode())
-        logging.debug(msg.bulk.decode())
+        logging.debug(msg.bulk)
         self.processes[msg.uuid].give_me_messages(msg)
 
     def __repr__(self):
-        return "<tfnz.container.Container object at %x (image=%s uuid=%s)>" % (id(self), self.image, self.uuid.decode())
+        return "<Container `%s` image=%s ip=%s>" % (self.uuid.decode(), self.image, self.ip)
 
 
 class ExternalContainer(Connectable):
@@ -355,3 +363,10 @@ class ExternalContainer(Connectable):
 
     def __init__(self, conn: 'Connection', uuid: str, node: Union['Node', bytes], ip):
         super().__init__(conn, uuid, node, ip)
+
+    def private_ip(self):
+        """Reports the container's ip address"""
+        return self.ip
+
+    def __repr__(self):
+        return "<ExternalContainer '%s' ip=%s>" % (self.uuid.decode(), self.ip)

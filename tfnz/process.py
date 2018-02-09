@@ -94,4 +94,4 @@ class Process(Killable):
             self.data_callback(self, msg.bulk)
 
     def __repr__(self):
-        return "<tfnz.process.Process object at %x (uuid=%s)>" % (id(self), self.uuid.decode())
+        return "<Process '%s'>" % self.uuid.decode()

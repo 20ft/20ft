@@ -56,11 +56,8 @@ class SshServer(Waitable):
         # see if we can bring the socket up
         self.sock = socket.socket()
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            self.sock.bind(('', self.port))
-        except OSError:
-            self.unblock_and_raise(RuntimeError("Tried to start ssh server but the port was already taken: "
-                                                + str(self.port)))
+        self.sock.bind(('', self.port))
+
 
         # we are good to go
         self.sock.listen()
@@ -105,6 +102,10 @@ class SshServer(Waitable):
     def transport_closed(self, transport):
         logging.debug("SSH server knows transport has closed: " + transport.uuid)
         del self.transports[transport.uuid]
+
+    def __repr__(self):
+        return "<SshServer '%s' container=%s port=%d>" % \
+               (self.uuid, self.container().uuid.decode(), self.port)
 
 
 class SshTransport(paramiko.ServerInterface):

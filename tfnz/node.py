@@ -170,5 +170,5 @@ class Node:
             logging.info("Container has exited and/or been destroyed: " + msg.uuid.decode())
 
     def __repr__(self):
-        return "<tfnz.node.Node object at %x (pk=%s containers=%d)>" % \
-               (id(self), b64encode(self.pk).decode(), len(self.containers))
+        return "<Node '%s' containers=%d>" % \
+               (b64encode(self.pk).decode(), len(self.containers))
