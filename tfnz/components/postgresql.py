@@ -14,16 +14,17 @@
 import random
 import string
 import logging
-from tfnz.location import Location
+from tfnz.node import Node
 from tfnz.volume import Volume
+from tfnz.container import Container
 
 
 class Postgresql:
     """An object encapsulating a Postgresql server running on it's default port (5432)"""
-    def __init__(self, location: Location, volume: Volume, *, password: str=None, log_callback=None, image=None):
+    def __init__(self, node: Node, volume: Volume, *, password: str=None, log_callback=None, image=None):
         """Instantiate a postgresql server container. Connect with username=postgres.
 
-        :param location: A location (object) to connect to.
+        :param node: The node to spawn on.
         :param volume: A volume (object) to use as a persistent store.
         :param password: An optional password for the database, will create one if not supplied.
         :param log_callback: An optional callback for log messages -  signature (object, bytes)
@@ -35,36 +36,19 @@ class Postgresql:
             self.password = password
 
         # create
-        self.node = location.node()
-        self.ctr = self.node.spawn_container('postgres:alpine' if image is None else image,
-                                             volumes=[(volume, '/var/lib/postgresql/data')],
-                                             stdout_callback=log_callback).wait_until_ready()
+        self.ctr = node.spawn_container('postgres:alpine' if image is None else image,
+                                        volumes=[(volume, '/var/lib/postgresql/data')],
+                                        stdout_callback=log_callback)
         self.ctr.wait_tcp(5432)
-        logging.info("Started Postgresql: " + self.ctr.uuid.decode())
 
         # actually set the password (passing it as part of the env doesn't work)
-        self.ctr.run_process('psql -Upostgres -c \'ALTER ROLE postgres WITH SUPERUSER PASSWORD "%s"\';'
-                             % self.password, nolog=True)  # prevent the password from being logged
+        self.ctr.run_process('psql -Upostgres -c "ALTER ROLE postgres WITH SUPERUSER PASSWORD \'%s\';"'
+                              % self.password, nolog=True)  # prevent the password from being logged
+        logging.info("Started Postgresql: " + self.ctr.uuid.decode())
 
-    def destroy(self):
-        """Destroys this postgresql instance"""
-        self.node.destroy_container(self.ctr)
-
-    def private_ip(self):
-        """Returns the private IP needed to configure clients"""
-        return self.ctr.private_ip()
-
-    def allow_connection_from(self, ctr):
-        """Allows connection from a client"""
-        self.ctr.allow_connection_from(ctr)
-
-    def wait_until_ready(self):
-        """Wait until Postgres is actually able to respond to queries"""
-        self.ctr.wait_tcp(5432)
-
-    def attach_tunnel(self):
-        """Attach a tcp tunnel to Postgres"""
-        return self.ctr.attach_tunnel(5432)
+    def __getattr__(self, item):
+        """Fake being inherited from the container"""
+        return self.ctr.__getattribute__(item)
 
     def __repr__(self):
         return "<Postgresql '%s' pass=%s>" % (self.ctr.uuid.decode(), self.password)
