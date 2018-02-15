@@ -105,8 +105,6 @@ class Container(Waitable, Killable, Connectable):
         """Destroy a tunnel
 
         :param tunnel: The tunnel to be destroyed."""
-        if not isinstance(tunnel, Tunnel):
-            raise TypeError()
         self.ensure_alive()
         self.location()._destroy_tunnel(tunnel, container=self)
 
@@ -232,8 +230,6 @@ class Container(Waitable, Killable, Connectable):
         """Destroy a process
 
         :param process: The process to be destroyed."""
-        if not isinstance(process, Process):
-            raise TypeError()
         self.ensure_alive()
         if process.uuid not in self.processes:
             raise ValueError("Process is not apparently a child of this container")
@@ -264,8 +260,6 @@ class Container(Waitable, Killable, Connectable):
 
         :param server: An SshServer object."""
         self.ensure_alive()
-        if not isinstance(server, SshServer):
-            raise TypeError()
         if server.uuid not in self.ssh_servers:
             raise ValueError("Server does not belong to this container")
         server.stop()
@@ -329,11 +323,11 @@ class Container(Waitable, Killable, Connectable):
             proc.destroy(with_command=False)
 
         # Destroy any tunnels
-        for tun in self.all_tunnels():
+        for tun in list(self.all_tunnels()):
             self.location()._destroy_tunnel(tun, self, with_command=False)
 
         # Destroy any ssh servers
-        for svr in self.ssh_servers.values():
+        for svr in list(self.ssh_servers.values()):
             self.destroy_ssh_server(svr)
 
         # Destroy (async)
@@ -361,7 +355,7 @@ class Container(Waitable, Killable, Connectable):
 class ExternalContainer(Connectable):
     """An object representing a container managed by another session (and the same user) but advertised using a tag"""
 
-    def __init__(self, conn: 'Connection', uuid: str, node: Union['Node', bytes], ip):
+    def __init__(self, conn, uuid, node, ip):
         super().__init__(conn, uuid, node, ip)
 
     def private_ip(self):
