@@ -15,3 +15,5 @@ pain_loop
 
 *.egg
 messidge
+perf_loop
+perf.py
