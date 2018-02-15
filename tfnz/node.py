@@ -73,8 +73,6 @@ class Node:
                 for vol in volumes:
                     if len(vol) != 2:
                         raise TypeError
-                    if not isinstance(vol[0], Volume):
-                        raise TypeError()
             except TypeError:
                 raise ValueError("You need to pass a list of tuples for volumes - [(volume_object, mount_point), ...]")
         if pre_boot_files is not None and len(pre_boot_files) > 0:
@@ -119,8 +117,6 @@ class Node:
         """Destroy a container running on this node. Will also destroy any tunnels onto the container.
 
         :param container: The container to be destroyed."""
-        if not isinstance(container, Container):
-            raise TypeError()
         container.ensure_alive()
         container._internal_destroy()
         # removing from .containers and marking any volumes as being free happens in container_status_update
@@ -144,7 +140,8 @@ class Node:
             return
 
         if 'exception' in msg.params:
-            container.unblock_and_raise(ValueError(msg.params['exception']))
+            self.parent().call_on_main(None, ValueError(msg.params['exception']))
+            container.mark_as_ready()
             return
 
         if 'status' not in msg.params:
@@ -161,10 +158,12 @@ class Node:
 
         if msg.params['status'] == 'destroyed':
             # wait lock will still be locked if the container did not successfully start
+            container.mark_as_ready()
             if container.wait_lock.locked():
-                container.unblock_and_raise(ValueError("Container did not manage to start"))
+                self.parent().call_on_main(None, ValueError("Container did not manage to start"))
             if container.termination_callback is not None:
-                container.termination_callback(container, 0)
+                container._internal_destroy()
+                self.parent().call_on_main(container.termination_callback, (container, 0))
 
             del self.containers[msg.uuid]
             logging.info("Container has exited and/or been destroyed: " + msg.uuid.decode())

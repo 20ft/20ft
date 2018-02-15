@@ -12,7 +12,6 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 
-# the method to implement is tf_main(location, node, environment, portmap, pass_args)
 # don't rename this as tfnz since it will clash with the tfnz module
 
 import sys
@@ -20,9 +19,7 @@ import re
 import os
 import os.path
 import argparse
-import signal
 from sys import argv, stderr
-from importlib import import_module
 from messidge import default_location, create_account
 from tfnz.location import Location
 from tfnz.volume import Volume
@@ -81,14 +78,12 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                               metavar="~/.ssh/some_id.pem")
 
     parser.add_argument('source', help="if '.' runs the most recently added docker image; "
-#                                       "if ends in '.py' tries to run a function implementation; "
                                        "else this is the tag or hex id of an image to run.")
 
     parser.add_argument('command', help='run this command/entrypoint instead', nargs='?')
     parser.add_argument('args', help='arguments to pass to a script or subprocess', nargs=argparse.REMAINDER)
 
     args = parser.parse_args()
-    # function_implementation = len(args.source) > 3 and args.source[-3:] == ".py"
 
     # collect any pre-boot files
     preboot = []
@@ -224,23 +219,6 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         args.command = [args.command]
         args.command.extend(args.args)
 
-    # try to launch as a method implementation
-    # if function_implementation:
-    #     try:
-    #         sys.path.append(os.path.dirname(os.path.expanduser(args.source)))
-    #         sys.path.append(os.getcwd())
-    #         imp = import_module(os.path.basename(args.source[:-3]))
-    #         imp.tf_main(location, environment, portmap, preboot, volumes, args.command, args.args)
-    #         signal.pause()
-    #     except (ImportError, TypeError, AttributeError):
-    #         print("Failed to import or run function in: " + args.source, file=sys.stderr)
-    #         print("The function to implement is: "
-    #               "def tf_main(location, environment, portmap, preboot, volumes, cmd, args):",
-    #               file=sys.stderr)
-    #         return location
-    #     except KeyboardInterrupt:
-    #         return location
-
     # try to launch the container
     interactive = Interactive(location) if args.interactive else None
     try:
@@ -252,7 +230,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                                          stdout_callback=(interactive.stdout_callback if args.interactive
                                                           else lambda _, out: sys.stdout.buffer.write(out)),
                                          termination_callback=(interactive.termination_callback if args.interactive
-                                                               else location.disconnect),
+                                                               else location.stop),
                                          command=args.command,
                                          sleep=args.sleep)
         container.wait_until_ready()  # a transport for exceptions
@@ -291,11 +269,8 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     if args.interactive:
         interactive.stdin_loop(container)
     else:
-        try:
-            location.conn.wait_until_complete()
-        except (KeyboardInterrupt, AttributeError):
-            pass
-    return location
+        location.run()
+    return None
 
 
 def main():

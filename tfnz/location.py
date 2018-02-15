@@ -18,6 +18,7 @@ import requests
 import requests.exceptions
 from typing import Union, List, Optional
 from base64 import b64encode
+from queue import Queue, Empty
 from subprocess import run, CalledProcessError, DEVNULL
 from requests.exceptions import ConnectionError
 from messidge import default_location
@@ -80,6 +81,52 @@ class Location(Waitable):
         self.wait_until_ready()  # doesn't return until a resource offer is made
         self.conn.loop.register_on_idle(self._heartbeat)
 
+        # create a queue of calls that need to be made on the main thread
+        self.call_queue = Queue()
+
+    def run(self):
+        """Run a blocking loop on the main thread.
+        call_on_main(None, None) to cause this loop to exit."""
+        try:
+            while self.conn is not None:
+                cmd, params = self.call_queue.get()
+                if cmd is None:
+                    if params is None:
+                        return
+                    raise params
+                else:
+                    cmd(*params)
+        finally:
+            self.disconnect()
+
+    def let_run_for(self, seconds):
+        """Runs a blocking loop for a limited period of time, does not disconnect the location"""
+        end_time = time.time() + seconds
+        while self.conn is not None:
+            try:
+                cmd, params = self.call_queue.get(timeout=(end_time - time.time()))
+                if cmd is None:
+                    raise params
+                else:
+                    try:
+                        cmd(*params)
+                    except TypeError as e:
+                        logging.warning(e)
+            except Empty:
+                return
+
+    def stop(self, obj=None, returncode=None):  # can be passed as a termination callback
+        self.call_queue.put((None, None))
+
+    def call_on_main(self, cmd, params):
+        if cmd is not None and len(params) != 2:
+            logging.warning("Calling on main with not two params - callbacks are normally obj, data")
+            return
+        if cmd is None and not isinstance(params, BaseException):
+            logging.warning("Calling on main didn't pass a command but the second parameter was not an exception")
+            return
+        self.call_queue.put((cmd, params))
+
     def disconnect(self, container=None, returncode=0):
         """Disconnect from the location - without calling this the object cannot be garbage collected"""
         # the container and returncode are passed if you use 'disconnect' as a termination function on a container
@@ -89,13 +136,9 @@ class Location(Waitable):
         logging.info("Disconnecting")
         for endpoint in list(self.endpoints.values()):
             [endpoint.unpublish(cluster) for cluster in list(endpoint.clusters.values())]
-        self.endpoints.clear()
-        for tunnel in list(self.tunnels.values()):
-            tunnel.destroy()
         for node in self.nodes.values():
-            for container in list(node.containers.values()):
-                for server in list(container.ssh_servers.values()):
-                    server.stop()
+            for container in [c for c in node.containers.values() if not c.dead]:
+                node.destroy_container(container)
         self.conn.disconnect()
         self.conn = None
 
@@ -140,23 +183,10 @@ class Location(Waitable):
         """Destroys an existing volume. This is not a 'move to trash', it will be destroyed.
 
         :param volume: The volume to be destroyed."""
-        if not isinstance(volume, Volume):
-            raise TypeError()
-        attempts = 0
-        while True:
-            try:
-                self.conn.send_blocking_cmd(b'destroy_volume', {'user': self.user_pk,
-                                                                'volume': volume.uuid})
-                logging.info("Destroyed volume: " + volume.uuid.decode())
-                self.volumes.remove(volume)
-                return
-            except ValueError as e:
-                # maybe still mounted, we have a limited number of retries
-                if attempts == 20:
-                    raise e
-                logging.debug("Could not destroy volume, trying again...")
-                attempts += 1
-                time.sleep(0.5)
+        self.conn.send_blocking_cmd(b'destroy_volume', {'user': self.user_pk,
+                                                        'volume': volume.uuid})
+        logging.info("Destroyed volume: " + volume.uuid.decode())
+        self.volumes.remove(volume)
 
     def all_volumes(self) -> List[Volume]:
         """Returns a list of all volumes on this node.

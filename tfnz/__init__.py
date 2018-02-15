@@ -27,7 +27,6 @@ class Waitable:
     """An object that can be waited on (until marked as ready)"""
     def __init__(self, locked: Optional[bool]=True):
         self.wait_lock = allocate_lock()
-        self.exception = None
         if locked:
             self.wait_lock.acquire()
 
@@ -36,15 +35,10 @@ class Waitable:
             self.wait_lock.release()
 
     def wait_until_ready(self, timeout: Optional[int]=30):
-        """Blocks waiting for a (normally asynchronous) update indicating the object is ready.
-
-        Note this also causes exceptions that would previously have been raised on the background thread
-        to be raise on the calling (i.e. main) thread."""
+        """Blocks waiting for a (normally asynchronous) update indicating the object is ready."""
         # this lock is used for waiting on while uploading layers, needs to be long
         self.wait_lock.acquire(timeout=timeout)
         self.wait_lock.release()
-        if self.exception:
-            raise self.exception
         return self
 
     def mark_as_ready(self):
@@ -54,11 +48,6 @@ class Waitable:
     def mark_not_ready(self):
         if not self.wait_lock.locked():
             self.wait_lock.acquire()
-
-    def unblock_and_raise(self, exception):
-        # releases the lock but causes the thread in 'wait_until_ready' to raise an exception
-        self.exception = exception
-        self.mark_as_ready()
 
 
 class Killable:
@@ -93,13 +82,13 @@ class Connectable:
         self.conn().send_blocking_cmd(b'allow_connection', {'node': self.node_pk,
                                                             'container': self.uuid,
                                                             'ip': obj.ip})
-        logging.info("Allowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid.decode()))
+        logging.info("Allowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid))
 
     def disallow_connection_from(self, obj):
         self.conn().send_cmd(b'disallow_connection', {'node': self.node_pk,
                                                       'container': self.uuid,
                                                       'ip': obj.ip})
-        logging.info("Disallowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid.decode()))
+        logging.info("Disallowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid))
 
 
 class Taggable:

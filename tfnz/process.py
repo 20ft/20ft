@@ -1,8 +1,8 @@
 # Copyright (c) 2017 David Preece, All rights reserved.
-# 
+#
 # Permission to use, copy, modify, and/or distribute this software for any
 # purpose with or without fee is hereby granted.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 # WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
 # MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -24,6 +24,7 @@ class Process(Killable):
         super().__init__()
         self.parent = weakref.ref(parent)
         self.node = weakref.ref(parent.parent())
+        self.location = weakref.ref(self.node().parent())
         self.conn = weakref.ref(parent.conn())
         self.uuid = uuid
         self.data_callback = data_callback
@@ -80,7 +81,7 @@ class Process(Killable):
             logging.info("Terminated server side: %s (%d)" % (self.uuid.decode(), msg.params['returncode']))
             self.mark_as_dead()
             if self.termination_callback is not None:
-                self.termination_callback(self, msg.params['returncode'])
+                self.location().call_on_main(self.termination_callback, (self, msg.params['returncode'],))
             return
 
         # Stderr?

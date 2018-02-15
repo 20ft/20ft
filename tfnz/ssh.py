@@ -58,7 +58,6 @@ class SshServer(Waitable):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(('', self.port))
 
-
         # we are good to go
         self.sock.listen()
         logging.info("SSH server listening: ssh -p %s root@localhost" % self.port)
