@@ -14,7 +14,7 @@
 from setuptools import setup, find_packages
 
 setup(name='tfnz',
-      version='1.2.20',
+      version='1.2.23',
       author='David Preece',
       author_email='davep@20ft.nz',
       url='https://20ft.nz',
@@ -23,10 +23,10 @@ setup(name='tfnz',
       install_requires=['pyzmq', 'libnacl', 'py3dns', 'requests', 'shortuuid', 'cbor',
                         'paramiko', 'psutil', 'requests_unixsocket', 'bottle', 'messidge'],
       description='SDK for 20ft.nz',
-      long_description="The SDK for the 20ft.nz container infrastructure. " +
+      long_description="The SDK for the 20ft.nz container PaaS. " +
                        "This package contains the SDK, command line tools and man pages. " +
                        "Main documentation is at http://docs.20ft.nz",
-      keywords='container containers docker orchestration 20ft 20ft.nz',
+      keywords='container containers PaaS docker orchestration 20ft 20ft.nz',
       classifiers=[
           'Development Status :: 5 - Production/Stable',
           'Intended Audience :: Developers',
@@ -45,6 +45,7 @@ setup(name='tfnz',
                               'tfvolumes=tfnz.cli.tfvolumes:main',
                               'tfdomains=tfnz.cli.tfdomains:main',
                               'tfacctbak=tfnz.cli.tfacctbak:main',
+                              'tflocations=tfnz.cli.tflocations:main',
                               'tfresources=tfnz.cli.tfresources:main',
                               'tfcache=tfnz.cli.tfcache:main',
                               'tfdescribe=tfnz.cli.tfdescribe:main']

@@ -1,0 +1,22 @@
+.TH TFLOCATIONS(1)
+.SH NAME
+tflocations - list and select available 20ft locations
+.SH SYNOPSIS
+.B tflocations
+[\fB\-h\fR]
+         \fBlist\fR
+         \fBselect\fR location
+
+.SH DESCRIPTION
+.B tflocations
+Lists and selects from the available 20ft identities in ~/.20ft. Note that no check is made as to the various identities validity.
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Present cli help.
+.TP
+.BR list
+Return a list of the available identities with the currently default identity marked.
+.TP
+.BR select\ identity
+Select from the available identities. Will match prefix substrings.

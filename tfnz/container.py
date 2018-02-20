@@ -76,13 +76,12 @@ class Container(Waitable, Killable, Connectable):
         """Creates a TCP proxy between localhost and a container.
 
         :param dest_port: The TCP port on the container to connect to.
-        :param localport: Optional choice of local port no.
+        :param localport: Optional choice of local port no - if not provided uses the dest_port.
         :param bind: Optionally bind to an address other than localhost.
         :return: A Tunnel object.
 
         This call does no checking to ensure the server side is ready -
-        but a failed connection will not destroy the tunnel itself and hence it can be used for polling.
-        If the optional local port number is left as default, one will be automatically chosen.
+        but a failed connection will not destroy the tunnel itself and will poll until connected.
         """
         self.ensure_alive()
         localport = dest_port if localport is None else localport

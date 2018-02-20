@@ -15,6 +15,7 @@ import weakref
 import logging
 import requests
 import time
+from requests.exceptions import ConnectionError, ReadTimeout
 from typing import List, Optional, Tuple
 from tfnz.container import Container
 
@@ -94,7 +95,7 @@ class WebEndpoint:
                 r = requests.get(url, timeout=5)
                 if r.status_code == 200:
                     break
-            except (ConnectionError, requests.exceptions.ReadTimeout):
+            except (ConnectionError, ConnectionRefusedError, ReadTimeout):
                 pass
             attempts_remaining -= 1
             if attempts_remaining == 0:

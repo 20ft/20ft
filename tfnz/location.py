@@ -14,6 +14,8 @@
 import logging
 import socket
 import time
+import os
+import os.path
 import requests
 import requests.exceptions
 from typing import Union, List, Optional
@@ -96,6 +98,8 @@ class Location(Waitable):
                     raise params
                 else:
                     cmd(*params)
+        except KeyboardInterrupt:
+            pass
         finally:
             self.disconnect()
 
@@ -255,6 +259,19 @@ class Location(Waitable):
             Sender.send(docker_image_id, to_upload, self.conn)
         return layers
 
+    @staticmethod
+    def all_locations():
+        """Returns a list of 20ft locations that have an account on this machine"""
+        dirname = os.path.expanduser('~/.20ft/')
+        all_files = os.listdir(dirname)
+        locations = []
+        for file in all_files:
+            if file[-4:] == '.pub':
+                continue
+            if file + '.pub' in all_files:
+                locations.append(file)
+        return locations
+
     def _heartbeat(self):
         if time.time() - self.last_heartbeat < 30:
             return
@@ -277,6 +294,7 @@ class Location(Waitable):
 
     def _wait_tcp(self, container, dest_port):
         # called from Container - raises a ValueError if it cannot connect before the timeout
+        logging.info("Waiting on tcp (%d): %s" % (dest_port, container.uuid.decode()))
         self.conn.send_blocking_cmd(b'wait_tcp', {'container': container.uuid, 'port': dest_port})
 
     def _wait_http_200(self, container, dest_port, fqdn, path, localport=None) -> Tunnel:

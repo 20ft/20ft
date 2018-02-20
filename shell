@@ -1,0 +1,19 @@
+# install man pages
+apps=(tfnz tfvolumes tfdomains tfacctbak tfresources tfcache tfdescribe tflocations)
+for app in ${apps[*]}; do
+	curl -s https://20ft.nz/$app.1 > /usr/local/share/man/man1/$app.1
+done
+
+# set up completion
+if [ "${SHELL:(-4)}" == "fish" ]; then
+	touch ~/.config/fish/config.fish
+	echo 'complete -c tfvolumes -a "list create destroy"
+	complete -c tfdomains -a "list prepare claim release"
+	complete -c tflocations -a "list select"' >> ~/.config/fish/config.fish
+	source ~/.config/fish/config.fish
+else
+	echo 'complete -W "list create destroy" tfvolumes
+	complete -W "list prepare claim release" tfdomains
+	complete -W "list select" tflocations' >> ~/.bash_profile
+	source ~/.bash_profile
+fi

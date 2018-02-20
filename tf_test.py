@@ -470,25 +470,25 @@ class TfTest(TestCase):
         node = TfTest.location.node()
 
         # containers
-        before = len(node.all_containers())
+        before = len(node.containers)
         c1 = node.spawn_container('alpine', sleep=True).wait_until_ready()
-        self.assertTrue(len(node.all_containers()) == before + 1, "List of containers on a node was wrong")
+        self.assertTrue(len(node.containers) == (before + 1), "List of containers on a node was wrong")
         self.assertTrue(c1 in node.all_containers(), "List of containers on node did not contain right one")
         c2 = node.spawn_container('alpine', sleep=True).wait_until_ready()
-        self.assertTrue(len(node.all_containers()) == before + 2, "List of containers on a node did not get larger")
+        self.assertTrue(len(node.containers) == (before + 2), "List of containers on a node did not get larger")
         self.assertTrue(c2 in node.all_containers(), "Second container was not in the list of containers")
         self.assertTrue(c1 in node.all_containers(), "First container was no longer on the list of containers")
 
         # processes
         p1 = c1.spawn_process('ping 8.8.8.8')
-        self.assertTrue(len(c1.all_processes()) == 1, "List of processes was wrong")
+        self.assertTrue(len(c1.processes) == 1, "List of processes was wrong")
         self.assertTrue(p1 in c1.all_processes(), "Did not add the correct process to the process list")
         p2 = c1.spawn_process('ping 8.8.8.8')
-        self.assertTrue(len(c1.all_processes()) == 2, "List of processes did not grow")
+        self.assertTrue(len(c1.processes) == 2, "List of processes did not grow")
         self.assertTrue(p1 in c1.all_processes(), "Lost first process from list of processes")
         self.assertTrue(p2 in c1.all_processes(), "New process was not added to list of processes")
         c1.destroy_process(p2)
-        self.assertTrue(len(c1.all_processes()) == 1, "List of processes did not shrink")
+        self.assertTrue(len(c1.processes) == 1, "List of processes did not shrink")
         self.assertTrue(p1 in c1.all_processes(), "Removed the wrong process from the process list")
         c1.destroy_process(p1)
 
@@ -500,6 +500,7 @@ class TfTest(TestCase):
                 break
             if attempts == 0:
                 self.assertTrue(False, "List of containers did not remove entry after destroying one")
+            print('Waiting for container to actually disappear from node...')
             time.sleep(0.1)
             attempts -= 1
 
@@ -514,10 +515,10 @@ class TfTest(TestCase):
             self.assertTrue(True)
 
         # tunnels
-        t1 = c2.attach_tunnel(80)
+        t1 = c2.attach_tunnel(80, 8000)
         self.assertTrue(len(c2.all_tunnels()) == 1, "List of tunnels on a container was wrong")
         self.assertTrue(t1 in c2.all_tunnels(), "List of tunnels on container did not contain right one")
-        t2 = c2.attach_tunnel(80)
+        t2 = c2.attach_tunnel(80, 8001)
         self.assertTrue(len(c2.all_tunnels()) == 2, "List of tunnels on a container did not get larger")
         self.assertTrue(t2 in c2.all_tunnels(), "Second tunnel was not in the list of tunnels")
         self.assertTrue(t1 in c2.all_tunnels(), "First tunnel was no longer on the list of tunnels")
