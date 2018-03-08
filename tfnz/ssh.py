@@ -188,7 +188,6 @@ class SshTransport(paramiko.ServerInterface):
             channel.close()
 
         # close down the transport
-        self.socket.close()
         self.accept_thread.join()
         self.paramiko_transport.close()
         self.socket = None
@@ -297,7 +296,8 @@ class SshChannel:
         if self.process is not None:
             if self.process.uuid in self.location().tunnels:
                 del self.location().tunnels[self.process.uuid]
-            self.process.destroy()
+            if not self.process.dead:
+                self.process.destroy()
 
     def get_id(self):
         return self.paramiko_channel.get_id()

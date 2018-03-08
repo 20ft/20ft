@@ -214,23 +214,21 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                 return location
             mount_points.add(mount)
 
-    # overloaded command? args? (makes it into a list)
+    # overloaded command? args? (makes it into a string)
     if args.command is not None and args.args is not None:
         args.command = [args.command]
         args.command.extend(args.args)
 
     # try to launch the container
-    interactive = Interactive(location) if args.interactive else None
     try:
         node = location.node()
         container = node.spawn_container(args.source,
                                          env=environment,
                                          pre_boot_files=preboot,
                                          volumes=volumes,
-                                         stdout_callback=(interactive.stdout_callback if args.interactive
-                                                          else lambda _, out: sys.stdout.buffer.write(out)),
-                                         termination_callback=(interactive.termination_callback if args.interactive
-                                                               else location.stop),
+                                         stdout_callback=(Interactive.stdout_callback if args.interactive
+                                                          else lambda _, out: print(out.decode(), end='', flush=True)),
+                                         termination_callback=location.stop,
                                          command=args.command,
                                          sleep=args.sleep)
         container.wait_until_ready()  # a transport for exceptions
@@ -265,11 +263,16 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         print("Failed while publishing to an endpoint: " + str(e))
         return location
 
-    # wait until quit
+    # running interactively?
+    interactive = None
     if args.interactive:
-        interactive.stdin_loop(container)
-    else:
-        location.run()
+        interactive = Interactive(location, container)
+
+    # go
+    location.run()
+    if interactive is not None:
+        interactive.stop()
+
     return None
 
 

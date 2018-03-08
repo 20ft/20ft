@@ -18,9 +18,13 @@ import os
 import os.path
 import requests
 import requests.exceptions
+import termios
+import sys
+import threading
+from signal import alarm, sigwait, signal, SIGALRM, SIGUSR1, SIGINT, SIGTERM
 from typing import Union, List, Optional
 from base64 import b64encode
-from queue import Queue, Empty
+from queue import Queue
 from subprocess import run, CalledProcessError, DEVNULL
 from requests.exceptions import ConnectionError
 from messidge import default_location
@@ -58,6 +62,7 @@ class Location(Waitable):
         self.endpoints = {}
         self.domains = None
         self.last_heartbeat = time.time()
+        self.stopping = False
 
         # see if we even can connect...
         ip = location_ip if location_ip is not None else self.location
@@ -84,52 +89,63 @@ class Location(Waitable):
         self.conn.loop.register_on_idle(self._heartbeat)
 
         # create a queue of calls that need to be made on the main thread
+        self.in_run_loop = False
         self.call_queue = Queue()
+        self.main_thread_id = threading.get_ident()
 
-    def run(self):
-        """Run a blocking loop on the main thread.
-        call_on_main(None, None) to cause this loop to exit."""
+        # capture stdin attributes
         try:
-            while self.conn is not None:
-                cmd, params = self.call_queue.get()
-                if cmd is None:
-                    if params is None:
-                        return
-                    raise params
-                else:
-                    cmd(*params)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            self.disconnect()
+            self.stdin_attr = termios.tcgetattr(sys.stdin.fileno())
+        except termios.error:
+            self.stdin_attr = None
 
-    def let_run_for(self, seconds):
-        """Runs a blocking loop for a limited period of time, does not disconnect the location"""
-        end_time = time.time() + seconds
-        while self.conn is not None:
-            try:
-                cmd, params = self.call_queue.get(timeout=(end_time - time.time()))
-                if cmd is None:
-                    raise params
-                else:
-                    try:
-                        cmd(*params)
-                    except TypeError as e:
-                        logging.warning(e)
-            except Empty:
+    def run(self, timeout=0):
+        """The main thread blocks waiting for call_on_main to be called.
+        If we don't have a message queue on the main thread, callbacks won't be able to use blocking calls.
+        With a timeout it is limited to running for that amount of time....
+        No timeout implies run forever, and will disconnect itself when it leaves the loop."""
+        alarm(timeout)
+        while not self.stopping:
+            event = sigwait((SIGALRM, SIGINT, SIGTERM, SIGUSR1))
+            if event == SIGALRM:  # timeout
                 return
+            if event == SIGINT or event == SIGTERM:  # ctrl-c or similar
+                self.stop()
+            if event == SIGUSR1:
+                self._handle_queue_single()
 
-    def stop(self, obj=None, returncode=None):  # can be passed as a termination callback
-        self.call_queue.put((None, None))
+    def stop(self, foo=None, bar=None):
+        # don't go all recursive
+        if self.stopping:
+            return
+        self.stopping = True
+
+        # reset terminal attributes
+        if self.stdin_attr is not None:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, self.stdin_attr)
+            print('', end='\r', flush=True)
+
+        # get on with disconnecting
+        self.disconnect()
 
     def call_on_main(self, cmd, params):
-        if cmd is not None and len(params) != 2:
-            logging.warning("Calling on main with not two params - callbacks are normally obj, data")
+        # bypass if we actually are on the main thread
+        if threading.get_ident() == self.main_thread_id:
+            cmd(params)
             return
-        if cmd is None and not isinstance(params, BaseException):
-            logging.warning("Calling on main didn't pass a command but the second parameter was not an exception")
-            return
-        self.call_queue.put((cmd, params))
+
+        # otherwise put in the queue and signal
+        if self.conn is not None:  # stops errant signals breaking the shutdown process
+            self.call_queue.put((cmd, params))
+            os.kill(os.getpid(), SIGUSR1)
+
+    def raise_on_main(self, exception):
+        if threading.get_ident() == self.main_thread_id:
+            raise exception
+
+        if self.conn is not None:
+            self.call_queue.put((None, exception))
+            os.kill(os.getpid(), SIGUSR1)
 
     def disconnect(self, container=None, returncode=0):
         """Disconnect from the location - without calling this the object cannot be garbage collected"""
@@ -295,7 +311,7 @@ class Location(Waitable):
     def _wait_tcp(self, container, dest_port):
         # called from Container - raises a ValueError if it cannot connect before the timeout
         logging.info("Waiting on tcp (%d): %s" % (dest_port, container.uuid.decode()))
-        self.conn.send_blocking_cmd(b'wait_tcp', {'container': container.uuid, 'port': dest_port})
+        self.conn.send_blocking_cmd(b'wait_tcp', {'container': container.uuid, 'port': dest_port}, timeout=10)
 
     def _wait_http_200(self, container, dest_port, fqdn, path, localport=None) -> Tunnel:
         # called from Container
@@ -364,13 +380,14 @@ class Location(Waitable):
         self.mark_as_ready()  # only ready once we've dealt with the resource offer
 
     def _update_stats(self, msg):
-        if msg.params['node'] not in self.nodes:
-            logging.debug("Received updated stats from a node we didn't know existed: " +
-                          b64encode(msg.params['node']).decode())
-            return
-        node = self.nodes[msg.params['node']]
+        node = self._ensure_node(msg)
         node._update_stats(msg.params['stats'])
         self.last_best_nodes = None  # force a refresh next time 'best node' is called
+
+    def _node_destroyed(self, msg):
+        node = self._ensure_node(msg)
+        node._internal_destroy()
+        del self.nodes[msg.params['node']]
 
     def _log(self, msg):
         if msg.params['error']:
@@ -378,8 +395,22 @@ class Location(Waitable):
         else:
             logging.info(msg.params['log'])
 
+    def _handle_queue_single(self, foo=None, bar=None):
+        """Handle a single item on the event queue"""
+        cmd, params = self.call_queue.get()
+        if cmd is None:
+            raise params  # no command means raise this exception
+        else:
+            cmd(*params)  # call the thing
+
+    def _ensure_node(self, msg):
+        if msg.params['node'] not in self.nodes:
+            raise ValueError("Didn't know about node: " + b64encode(msg.params['node']).decode())
+        return self.nodes[msg.params['node']]
+
     _commands = {b'resource_offer': ([], False),
                  b'update_stats': (['node', 'stats'], False),
+                 b'node_destroyed': (['node'], False),
                  b'from_proxy': (['proxy'], False),
                  b'close_proxy': (['proxy'], False),
                  b'log': (['error', 'log'], False)}

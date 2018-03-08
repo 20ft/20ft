@@ -310,7 +310,7 @@ class Container(Waitable, Killable, Connectable):
                              reply_callback=self.parent()._container_status_update)
         self.wait_until_ready()
 
-    def _internal_destroy(self):
+    def _internal_destroy(self, send_cmd=True):
         # Destroy this container
         if self.bail_if_dead():
             return
@@ -330,10 +330,17 @@ class Container(Waitable, Killable, Connectable):
             self.destroy_ssh_server(svr)
 
         # Destroy (async)
-        self.conn().send_cmd(b'destroy_container', {'node': self.parent().pk,
-                                                    'container': self.uuid})
+        if send_cmd:
+            logging.info("Destroying container: " + self.uuid.decode())
+            self.conn().send_cmd(b'destroy_container', {'node': self.parent().pk,
+                                                        'container': self.uuid})
+        else:
+            logging.info("Container has exited and/or been destroyed: " + self.uuid.decode())
         self.mark_as_dead()
-        logging.info("Destroying container: " + self.uuid.decode())
+
+        # Callback
+        if self.termination_callback is not None:
+            self.location().call_on_main(self.termination_callback, (self, 0))
 
     def _process_callback(self, msg):
         if self.bail_if_dead():

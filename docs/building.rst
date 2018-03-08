@@ -111,7 +111,20 @@ However, there is no interactive input so the second command will fail. The solu
 
 **Use COPY not ADD**
 
-Neither COPY nor ADD have the same semantics as the unix 'cp' command, particularly regarding directories, and many unpleasant surprises await. This is covered in more detail in `this excellent blog post <https://www.ctl.io/developers/blog/post/dockerfile-add-vs-copy/>`_.
+Neither COPY nor ADD have the same semantics as the unix 'cp' command, particularly regarding directories, and many unpleasant surprises await. The most important result is that to recursively copy a directory tree you need ``COPY from/ to/`` and any globbing operators will cancel the recursion.
+
+This is covered in more detail in `this excellent blog post <https://www.ctl.io/developers/blog/post/dockerfile-add-vs-copy/>`_.
+
+**On removing files**
+
+Often you will see a pattern such as::
+
+    FROM alpine
+    COPY build_files/ build_files/
+    RUN build
+    RUN rm -r build_files/
+
+And the resulting container will not have removed the build files. This is (unfortunately) a naievety problem on my side - in that overlaying a filesystem with another that doesn't have the file doesn't produce no file. If this is a problem, build with ``docker build --squash`` which will take the resulting filesystem and flatten in into two layers - the base OS, and everything else. In many cases this has positive performance implications as well.
 
 **When a build is not regarded as 'new'**
 
@@ -181,7 +194,15 @@ A few days later a security patch is released for apache2 and it would seem that
 
 **'docker clean'?**
 
-You can see the layers stored in the Docker daemon with ``docker images``, but there is no 'docker clean'. Run ``docker images -q | xargs docker rmi -f $1``. Because of dependency problems you may need to run it more than once. This is, indeed, hilariously bad.
+You can see the layers stored in the Docker daemon with ``docker images``, but there is no 'docker clean'. Handy shortcuts are:
+
+* ``docker images -q | xargs docker rmi -f $1`` removes all images. Because of dependency problems you may need to run it more than once.
+* ``docker images | grep '<none>' | egrep -o '[0-9a-f]{12}' | xargs docker rmi -f $1`` removes all images that are not tagged.
+* ``docker ps -qa | xargs docker rm $1`` stops and removes processes running in the local docker.
+
+**Files not being removed when running rm instructions as part of the Dockerfile**
+
+In essence what happens is that the loss of the file cannot be expressed using a filesystem layer. Investigations are continuing.
 
 Some Thoughts about Versioning
 ==============================

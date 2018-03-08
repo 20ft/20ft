@@ -60,7 +60,7 @@ To interact with a long-lived process you can inject into the process's stdin st
 Launching a Shell
 =================
 
-While traditional to launch a bash process then attach the streams, on SmartOS we are able to connect to a 'real' login shell. A few caveats are that not all containers will allow you to do this; in many cases, trying to run synchronously basically doesn't work (for the initial log-on at least, data arrives in 'stutters'); and that a command is not executed until you send a 'return' ("\\n")::
+We are able to connect to a login shell. A few caveats are that not all containers will allow you to do this; in many cases, trying to run synchronously basically doesn't work (for the initial log-on at least, data arrives in 'stutters'); and that a command is not executed until you send a 'return' ("\\n")::
 
     import time
     import sys
@@ -79,9 +79,3 @@ While traditional to launch a bash process then attach the streams, on SmartOS w
     shell.stdin(b'ps faxu\n')
     time.sleep(1)
 
-Interactive shell sessions are a work in progress.
-
-Real SSH
-========
-
-Attaching a debugger via an ssh and/or sftp session is currently a work in progress. "Callback" style debuggers are in a similar position.

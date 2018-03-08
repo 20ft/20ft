@@ -18,6 +18,8 @@ import tty
 import select
 import re
 import logging
+import os
+from threading import Thread
 from subprocess import check_call, CalledProcessError
 from messidge import default_location
 from tfnz.location import Location
@@ -161,36 +163,37 @@ WantedBy=multi-user.target
 
 
 class Interactive:
-    def __init__(self, loc):
-        self.shown_escape_info = False
-        self.term_attr = None
+    def __init__(self, location, container):
+        self.stdin_attr = None
+        self.location = location
+        self.container = container
+        self.exit_read, self.exit_write = os.pipe()
+        self.thread = Thread(target=self.stdin_loop, name="Stdin loop")
+        self.thread.start()
+
+    def stdin_loop(self):
+        # fails in debugger so we'll just ignore that
+        print("Interactive session - escape is triple \'^]\'.", flush=True)
         try:
-            self.term_attr = termios.tcgetattr(sys.stdout.fileno())
+            tty.setraw(sys.stdin.fileno())
         except termios.error:
             pass
-        self.location = loc
-        self.running = True
 
-    def stdin_loop(self, container):
-        # do we need to let the user know?
-        if not self.shown_escape_info:
-            print("Interactive session - escape is triple \'^]\'.")
-            self.shown_escape_info = True
+        # message loop
+        while True:
+            ready = select.select((sys.stdin, self.exit_read), (), ())
+            if self.exit_read in ready[0]:
+                return
+            data = sys.stdin.read(1)
+            self.location.call_on_main(self.container.stdin, (data.encode(),))
 
-        tty.setraw(sys.stdin.fileno())
-        while self.running:
-            ready = select.select((sys.stdin,), (), (), 0.5)
-            if len(ready[0]) != 0:
-                data = sys.stdin.read(1)
-                container.stdin(data.encode())
-
-    def stdout_callback(self, ctr, out):
+    @staticmethod
+    def stdout_callback(obj, out):
         # strip nasty control code things
         parts = re.split(b'\x1b\[\d*n', out, maxsplit=1)
         sys.stdout.buffer.write(parts[0] + (parts[1] if len(parts) > 1 else b''))
         sys.stdout.flush()
 
-    def termination_callback(self, ctr, returncode):
-        self.running = False
-        if self.term_attr is not None:
-            termios.tcsetattr(sys.stdout.fileno(), termios.TCSANOW, self.term_attr)
+    def stop(self, obj=None, code=None):
+        # reset stdin if we can
+        os.write(self.exit_write, b'\n')

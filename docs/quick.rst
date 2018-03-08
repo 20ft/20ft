@@ -2,19 +2,29 @@
 Quick Start
 ===========
 
-To ready a computer for being a 20ft development client, `install Docker <https://store.docker.com/search?type=edition&offering=community>`_ then choose which platform to install on - Docker or Python 3. Installing on Docker is simplest but (especially on mac) may prove to have worse performance; Installing into Python 3 needs a Python 3 environment on the development machine, but should prove to be faster. Note that for any advanced development you will be needing a Python 3 environment anyway.
+The quick start assumes you have already received an invite email. If not, please email davep@20ft.nz to receive one.
+
+Run on AWS
+==========
+
+Use the `ready made AMI <https://ap-southeast-2.console.aws.amazon.com/ec2/v2/home?region=ap-southeast-2#LaunchInstanceWizard:ami=ami-5435f336>`_ (runs fine on t2.nano, login with alpine@) and create an account using the command sent with your invite email.
+
+To Install on my Local Machine
+==============================
+
+To ready a computer for being a 20ft development client, `install Docker <https://store.docker.com/search?type=edition&offering=community>`_ then choose which platform to install on - Docker or Python 3. Installing on Docker is simplest but (especially on mac) may prove to have worse performance; Installing into Python 3 needs a Python 3 environment on the development machine, *and also a local docker instance* but should prove to be faster. You will also need gcc and make, if they're not installed already. Note that for any advanced development you will be needing a Python 3 environment anyway.
 
 **For Docker** Install with ``curl -s https://20ft.nz/docker | sh``.
 
-**For Python 3** Ensure you have pip3 installed then run ``pip3 install tfnz``.
+**For Python 3** Ensure you have pip installed then run ``pip3 install tfnz``.
 
-Create an account with the command sent with your invite email. Man pages can be installed for either platform with ``curl -s https://20ft.nz/docker | sh``
+Man pages and tab completion can be installed for either platform with ``curl -s https://20ft.nz/shell | sh``. I'd recommended pulling the 'nginx', 'postgres:alpine' and 'alpine' docker images too.
 
 
 Your First Container
 ====================
 
-Running nginx is the hello world of containers. Launch your first container with ``tf -p 8080:80 nginx``. This will...
+Running nginx is the hello world of containers. Launch your first container with ``tfnz -p 8080:80 nginx``. This will...
 
 * Connect to the default location (in this case "tiny.20ft.nz") and set up an encrypted tunnel.
 * Receive a list of resources we can use.
@@ -32,7 +42,7 @@ You should see output something like::
     0409112639.978 INFO     Container is running: b'xfqMKCwqai9KTURtc7GRUi'
     0409112640.017 INFO     Created tunnel object: b'iJ6pyAg2FBRjyo5VPSj6Bg' (8080 -> 80)
 
-Open a web browser onto `http://localhost:8080 <http://localhost:8080>`_ and you should see the "Welcome to nginx!" page. You just launched your first container :) Ctrl-C will end the process and clean up resources; and refreshing the browser will show that the container is no longer responding. Perfect.
+Open a web browser onto `http://localhost:8080 <http://localhost:8080>`_ and you should see the "Welcome to nginx!" page (those using the AMI will need to open another session and ``curl http://localhost:8080``. You just launched your first container :) Ctrl-C will end the process and clean up resources; and refreshing the browser will show that the container is no longer responding. Perfect.
 
 
 Your First Docker Workflow
@@ -62,9 +72,9 @@ Get Docker to build the image::
     Removing intermediate container 3363972fc7e0
     Successfully built c76560c98518
 
-Now we can instruct 20ft to use this image with ``tf -p 8080:80 .`` - note the '.' that lets 20ft know we want the latest build.::
+Now we can instruct 20ft to use this image with ``tfnz -p 8080:80 .`` - note the '.' that lets 20ft know we want the latest build.::
 
-    davermbp:tmp dpreece$ tf -p 8080:80 .
+    davermbp:tmp dpreece$ tfnz -p 8080:80 .
     0409113224.440 INFO     Connecting to: tiny.20ft.nz:2020
     0409113224.454 INFO     Message queue connected
     0409113224.529 INFO     Handshake completed.
@@ -80,14 +90,14 @@ Now we can instruct 20ft to use this image with ``tf -p 8080:80 .`` - note the '
 
 ...opening the browser again gives "Hello World!". Easy :)
 
-Note that both ``tf --help`` and ``man tf`` do what you would hope.
+Note that both ``tfnz --help`` and ``man tfnz`` do what you would hope.
 
-A Quick VM
-==========
+A Shell
+=======
 
-Many images have a shell as their application. Using the ``-i`` flag we can connect stdin and stdout to this shell to get a quick VM::
+Many images have a shell as their application. Using the ``-ti`` flag we can connect stdin and stdout and open a shell in a new container quickly...::
 
-    davermbp:tmp dpreece$ tf -i alpine
+    davermbp:tmp dpreece$ tfnz -ti alpine
     1114191344.444 INFO     Connecting to: tiny.20ft.nz:2020
     1114191344.461 INFO     Message queue connected
     1114191344.483 INFO     Handshake completed
@@ -103,4 +113,4 @@ Many images have a shell as their application. Using the ``-i`` flag we can conn
     1114191353.335 INFO     Disconnecting
     1114191353.335 INFO     Container has exited and/or been destroyed: b'GyYjWRVKjYpUk6HEAB5VoP'
 
-The treatment of the tty in this mode is a little simplistic, and a better result can be had by running with ``--ssh 2222`` flag and then ssh'ing into the container with ``ssh -p 2222 root@localhost``.
+The treatment of the tty in this mode is a little simplistic, and a better result can be had by running with ``-s`` flag and then ssh'ing into the container with ``ssh -p 2222 root@localhost``.

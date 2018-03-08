@@ -86,10 +86,10 @@ class Sender:
                     if end_byte >= len(layer_data):
                         end_byte = len(layer_data)
                     send_data = lzma.compress(layer_data[data_loc:end_byte], preset=1)
-                    conn.send_cmd(b'upload_slab', {'sha256': sha256, 'slab': slab}, bulk=send_data)
+                    reply = conn.send_blocking_cmd(b'upload_slab', {'sha256': sha256, 'slab': slab}, bulk=send_data)
+                    logging.info(reply.params['log'])
                     data_loc += slab_size
                     slab += 1
-                    logging.info("Sending slab: " + str(slab))
 
                 # this is the end
                 # the upload_complete call can take ages to happen because it'll be behind all the slabs

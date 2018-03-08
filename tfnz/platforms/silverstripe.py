@@ -64,11 +64,13 @@ class SilverStripe:
         # start the actual webserving process
         fqdn_sed = "sed -i -e 's/--fqdn--/%s/g' /etc/nginx/conf.d/nginx.conf" % fqdn
         timezone_sed = "sed -i -e 's/;date.timezone =/date.timezone = %s/g' /etc/php7/php.ini" % "UTC"  # TODO
+        pool_sed = "sed -i -e 's/pm.max_children = 5/pm.max_children = 16/g' /etc/php7/php-fpm.d/www.conf"
         for w in self.webservers:
             self.db.allow_connection_from(w)
             w.run_process('rm /etc/nginx/conf.d/default.conf /site/install*')
             w.run_process(fqdn_sed)
             w.run_process(timezone_sed)
+            w.run_process(pool_sed)
             w.run_process('mkdir /run/nginx')
             w.spawn_process('nginx')
             w.spawn_process('php-fpm7')

@@ -37,7 +37,9 @@ class Waitable:
     def wait_until_ready(self, timeout: Optional[int]=30):
         """Blocks waiting for a (normally asynchronous) update indicating the object is ready."""
         # this lock is used for waiting on while uploading layers, needs to be long
-        self.wait_lock.acquire(timeout=timeout)
+        acquired = self.wait_lock.acquire(timeout=timeout)
+        if not acquired:
+            raise TimeoutError("wait_until_ready timed out")
         self.wait_lock.release()
         return self
 

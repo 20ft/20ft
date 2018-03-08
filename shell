@@ -1,7 +1,8 @@
 # install man pages
+mkdir -p /usr/share/man/man1/
 apps=(tfnz tfvolumes tfdomains tfacctbak tfresources tfcache tfdescribe tflocations)
 for app in ${apps[*]}; do
-	curl -s https://20ft.nz/$app.1 > /usr/local/share/man/man1/$app.1
+	curl -sk https://20ft.nz/$app.1 > /usr/share/man/man1/$app.1
 done
 
 # set up completion

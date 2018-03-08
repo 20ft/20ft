@@ -17,6 +17,7 @@ import weakref
 import shortuuid
 from base64 import b64encode
 from typing import List, Optional, Tuple
+from messidge.client.message import Message
 from .docker import Docker
 from .container import Container
 from .volume import Volume
@@ -48,7 +49,7 @@ class Node:
         :param sleep: replaces the Entrypoint/Cmd with a single blocking command (container still boots).
         :param volumes: a list of (volume, mountpoint) pairs.
         :param pre_boot_files: List (filename, data) pairs to write into the container before booting.
-        :param command: ignores Entrypoint/Cmd and launches with this script instead.
+        :param command: ignores Entrypoint/Cmd and launches with this script instead, list not string.
         :param stdout_callback: Called when the container sends output - signature (container, string).
         :param termination_callback: For when the container completes - signature (container, returncode).
         :param advertised_tag: A tag used so other sessions (for the same user) can reference the container.
@@ -91,7 +92,7 @@ class Node:
 
         if command is not None:
             descr['Config']['Entrypoint'] = []
-            descr['Config']['Cmd'] = [command]  # will overwrite the container's config
+            descr['Config']['Cmd'] = command  # will overwrite the container's config
         vol_struct = [(vol[0].uuid, vol[1]) for vol in volumes] if volumes is not None else None
         layers = self.parent().ensure_image_uploaded(image, descr=descr)
 
@@ -127,10 +128,18 @@ class Node:
         :return: A list of Container objects."""
         return list(self.containers.values())
 
+    def _internal_destroy(self):
+        """Called when the node needs to clean itself up"""
+        # fake container status update messages
+        for ctr in self.containers.values():
+            msg = Message()
+            msg.uuid = ctr.uuid
+            msg.params = {'status': 'destroyed'}
+            self._container_status_update(msg)
+
     def _update_stats(self, stats):
         # the node telling us it's current resource state
         self.stats = stats
-        logging.debug("Stats updated for node: " + b64encode(self.pk).decode())
 
     def _container_status_update(self, msg):
         try:
@@ -140,7 +149,7 @@ class Node:
             return
 
         if 'exception' in msg.params:
-            self.parent().call_on_main(None, ValueError(msg.params['exception']))
+            self.parent().raise_on_main(ValueError(msg.params['exception']))
             container.mark_as_ready()
             return
 
@@ -158,15 +167,13 @@ class Node:
 
         if msg.params['status'] == 'destroyed':
             # wait lock will still be locked if the container did not successfully start
-            container.mark_as_ready()
             if container.wait_lock.locked():
-                self.parent().call_on_main(None, ValueError("Container did not manage to start"))
-            if container.termination_callback is not None:
-                container._internal_destroy()
-                self.parent().call_on_main(container.termination_callback, (container, 0))
+                self.parent().raise_on_main(ValueError("Container did not manage to start"))
+                container.mark_as_ready()  # to unblock the lock if nothing else
 
+            # destroy
+            container._internal_destroy(send_cmd=False)
             del self.containers[msg.uuid]
-            logging.info("Container has exited and/or been destroyed: " + msg.uuid.decode())
 
     def __repr__(self):
         return "<Node '%s' containers=%d>" % \

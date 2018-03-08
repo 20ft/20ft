@@ -50,8 +50,6 @@ class Mezzanine:
         first_server.put('/%s/%s/local_settings.py' % (app_name, app_name), localsettings.encode())
         self.db.allow_connection_from(first_server)
 
-        first_server.create_ssh_server()
-
         # do we need to initialise?
         # ensure database is also wait_until_ready
         if self.db.ensure_database('mezzanine'):

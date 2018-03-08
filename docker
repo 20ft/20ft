@@ -10,20 +10,8 @@ chmod +x /usr/local/bin/tfnz
 curl -s https://20ft.nz/tfnz.1 > /usr/local/share/man/man1/tfnz.1
 
 # create 'child' scripts
-apps=(tfvolumes tfdomains tfacctbak tfresources tfcache tfdescribe)
+apps=(tfvolumes tfdomains tfacctbak tfresources tfcache tfdescribe tflocations)
 for app in ${apps[*]}; do
 	ln -f -s /usr/local/bin/tfnz  /usr/local/bin/$app
 	curl -s https://20ft.nz/$app.1 > /usr/local/share/man/man1/$app.1
 done
-
-# set up completion
-if [ "${SHELL:(-4)}" == "fish" ]; then
-	touch ~/.config/fish/config.fish
-	echo 'complete -c tfvolumes -a "list create destroy"
-	complete -c tfdomains -a "list prepare claim release" ' >> ~/.config/fish/config.fish
-	source ~/.config/fish/config.fish
-else
-	echo 'complete -W "list create destroy" tfvolumes
-	complete -W "list prepare claim release" tfdomains' >> ~/.bash_profile
-	source ~/.bash_profile
-fi

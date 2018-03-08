@@ -1,0 +1,17 @@
+sudo su
+apk update
+apk add python3-dev gcc musl-dev libffi-dev zeromq-dev openssl-dev linux-headers make docker man bash curl nano
+pip3 install --compile tfnz
+rc-update add docker
+openrc -s docker start
+adduser alpine docker
+sleep 10
+docker pull nginx
+docker pull postgres:alpine
+docker pull alpine
+docker pull tfnz/mezzanine
+docker pull tfnz/silverstripe
+curl -sk https://20ft.nz/shell | bash
+echo '20ft.nz client AMI (Alpine)' > /etc/motd
+echo 'rc_interactive="NO"' >> /etc/rc.conf
+exit

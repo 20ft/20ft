@@ -49,22 +49,26 @@ class Postgresql(Waitable):
         self.async.start()
 
     def wait_truly_up(self):
-        # wait for TCP to come up
-        self.ctr.wait_tcp(5432)
+        try:
+            # wait for TCP to come up
+            self.ctr.wait_tcp(5432)
 
-        # wait for the db to come up
-        while True:
-            rtn = self.ctr.run_process('psql -Upostgres -h%s -c "SELECT;"' % self.ctr.private_ip(), nolog=True)
-            if rtn[2] == 0:
-                break
-            logging.debug("Waiting for Postgresql to accept a query.")
-            time.sleep(1)
+            # wait for the db to come up
+            while True:
+                rtn = self.ctr.run_process('psql -Upostgres -h%s -c "SELECT;"' % self.ctr.private_ip(), nolog=True)
+                if rtn[2] == 0:
+                    break
+                logging.debug("Waiting for Postgresql to accept a query.")
+                time.sleep(1)
 
-        # actually set the password (passing it as part of the env doesn't work)
-        self.ctr.run_process('psql -Upostgres -h%s -c "ALTER ROLE postgres WITH SUPERUSER PASSWORD \'%s\';"'
-                              % (self.ctr.private_ip(), self.password), nolog=True)  # prevent password being logged
-        logging.info("Started Postgresql: " + self.ctr.uuid.decode())
-        self.mark_as_ready()
+            # actually set the password (passing it as part of the env doesn't work)
+            self.ctr.run_process('psql -Upostgres -h%s -c "ALTER ROLE postgres WITH SUPERUSER PASSWORD \'%s\';"'
+                                  % (self.ctr.private_ip(), self.password), nolog=True)  # prevent password being logged
+            logging.info("Started Postgresql: " + self.ctr.uuid.decode())
+            self.mark_as_ready()
+
+        except BaseException as e:
+            logging.critical(str(e))
 
     def ensure_database(self, name) -> bool:
         """Ensures a given database exists - returns True if it created a new one"""

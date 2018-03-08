@@ -6,11 +6,11 @@ source_suffix = '.rst'
 
 master_doc = 'index'
 project = u'20ft'
-copyright = u'2016-2017, David Preece'
+copyright = u'2016-2018, David Preece'
 author = u'David Preece'
 
-version = u'1.2.10'
-release = u'1.2.10'
+version = u'1.2.23'
+release = u'1.2.23'
 
 html_theme = 'sphinx_rtd_theme'
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
