@@ -84,6 +84,9 @@ class Connectable:
         self.conn().send_blocking_cmd(b'allow_connection', {'node': self.node_pk,
                                                             'container': self.uuid,
                                                             'ip': obj.ip})
+        self.conn().send_blocking_cmd(b'ping', {'node': self.node_pk,
+                                                'container': obj.uuid,
+                                                'ip': self.ip})
         logging.info("Allowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid))
 
     def disallow_connection_from(self, obj):
