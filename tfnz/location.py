@@ -26,7 +26,6 @@ from typing import Union, List, Optional
 from base64 import b64encode
 from queue import Queue
 from subprocess import run, CalledProcessError, DEVNULL
-from requests.exceptions import ConnectionError
 from messidge import default_location
 from messidge.client.connection import Connection
 from . import TaggedCollection, Taggable, Waitable
@@ -153,12 +152,16 @@ class Location(Waitable):
         # i.e. it needs to be there, don't take it off!
         if self.conn is None:  # already disconnected
             return
-        logging.info("Disconnecting")
+
+        # destroy the things
         for endpoint in list(self.endpoints.values()):
             [endpoint.unpublish(cluster) for cluster in list(endpoint.clusters.values())]
         for node in self.nodes.values():
             for container in [c for c in node.containers.values() if not c.dead]:
                 node.destroy_container(container)
+
+        # disconnect
+        logging.info("Disconnecting: " + self.location)
         self.conn.disconnect()
         self.conn = None
 
@@ -322,25 +325,17 @@ class Location(Waitable):
         logging.info("Waiting on http 200: " + container.uuid.decode())
 
         # OK
-        tnl = self._tunnel_onto(container, dest_port, localport, None)
+        tnl = self._tunnel_onto(container, dest_port, localport, None)  # has a 30 sec timeout by default
         logging.debug("Tunnel connected onto: " + container.uuid.decode())
 
-        # poll until it's alive
+        # the server side polls so all we need to do is make the request
         url = 'http://%s:%d/%s' % (fqdn, tnl.localport(), path if path is not None else '')
-        attempts_remaining = 30
-        while True:
-            try:
-                r = requests.get(url, timeout=2)
-                if r.status_code == 200:
-                    logging.info("Connected onto: " + url)
-                    break
-            except (ConnectionError, requests.exceptions.ReadTimeout):
-                pass
-            attempts_remaining -= 1
-            if attempts_remaining == 0:
-                raise ValueError("Could not connect to: " + url)
-            time.sleep(1)
-        return tnl
+        r = requests.get(url, timeout=30)
+        if r.status_code == 200:
+            logging.info("Connected onto: " + url)
+            return tnl
+        else:
+            raise ValueError("Could not connect to: " + url)
 
     def _destroy_tunnel(self, tunnel: Tunnel, container=None, with_command=True):
         # Called from Container
