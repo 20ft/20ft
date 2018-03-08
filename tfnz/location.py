@@ -20,11 +20,9 @@ import requests
 import requests.exceptions
 import termios
 import sys
-import threading
-from signal import alarm, sigwait, signal, SIGALRM, SIGUSR1, SIGINT, SIGTERM
 from typing import Union, List, Optional
 from base64 import b64encode
-from queue import Queue
+from queue import Queue, Empty
 from subprocess import run, CalledProcessError, DEVNULL
 from messidge import default_location
 from messidge.client.connection import Connection
@@ -61,7 +59,6 @@ class Location(Waitable):
         self.endpoints = {}
         self.domains = None
         self.last_heartbeat = time.time()
-        self.stopping = False
 
         # see if we even can connect...
         ip = location_ip if location_ip is not None else self.location
@@ -88,9 +85,7 @@ class Location(Waitable):
         self.conn.loop.register_on_idle(self._heartbeat)
 
         # create a queue of calls that need to be made on the main thread
-        self.in_run_loop = False
         self.call_queue = Queue()
-        self.main_thread_id = threading.get_ident()
 
         # capture stdin attributes
         try:
@@ -98,53 +93,28 @@ class Location(Waitable):
         except termios.error:
             self.stdin_attr = None
 
-    def run(self, timeout=0):
+    def run(self, timeout=None):
         """The main thread blocks waiting for call_on_main to be called.
         If we don't have a message queue on the main thread, callbacks won't be able to use blocking calls.
         With a timeout it is limited to running for that amount of time....
         No timeout implies run forever, and will disconnect itself when it leaves the loop."""
-        alarm(timeout)
-        while not self.stopping:
-            event = sigwait((SIGALRM, SIGINT, SIGTERM, SIGUSR1))
-            if event == SIGALRM:  # timeout
-                return
-            if event == SIGINT or event == SIGTERM:  # ctrl-c or similar
-                self.stop()
-            if event == SIGUSR1:
-                self._handle_queue_single()
-
-    def stop(self, foo=None, bar=None):
-        # don't go all recursive
-        if self.stopping:
-            return
-        self.stopping = True
-
-        # reset terminal attributes
-        if self.stdin_attr is not None:
-            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, self.stdin_attr)
-            print('', end='\r', flush=True)
-
-        # get on with disconnecting
-        self.disconnect()
+        try:
+            while self.conn is not None:
+                cmd, params = self.call_queue.get(timeout=timeout)
+                if cmd is None:
+                    raise params  # no command means raise this exception
+                else:
+                    cmd(*params)  # call the thing
+        except Empty:
+            pass
+        except KeyboardInterrupt:
+            self.disconnect()
 
     def call_on_main(self, cmd, params):
-        # bypass if we actually are on the main thread
-        if threading.get_ident() == self.main_thread_id:
-            cmd(params)
-            return
-
-        # otherwise put in the queue and signal
-        if self.conn is not None:  # stops errant signals breaking the shutdown process
-            self.call_queue.put((cmd, params))
-            os.kill(os.getpid(), SIGUSR1)
+        self.call_queue.put((cmd, params))
 
     def raise_on_main(self, exception):
-        if threading.get_ident() == self.main_thread_id:
-            raise exception
-
-        if self.conn is not None:
-            self.call_queue.put((None, exception))
-            os.kill(os.getpid(), SIGUSR1)
+        self.call_queue.put((None, exception))
 
     def disconnect(self, container=None, returncode=0):
         """Disconnect from the location - without calling this the object cannot be garbage collected"""
@@ -152,6 +122,14 @@ class Location(Waitable):
         # i.e. it needs to be there, don't take it off!
         if self.conn is None:  # already disconnected
             return
+
+        # reset terminal attributes
+        if self.stdin_attr is not None:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, self.stdin_attr)
+            print('', end='\r', flush=True)
+
+        # end the run loop by raising an Empty exception
+        self.call_queue.put(None, Empty)
 
         # destroy the things
         for endpoint in list(self.endpoints.values()):
@@ -339,9 +317,6 @@ class Location(Waitable):
 
     def _destroy_tunnel(self, tunnel: Tunnel, container=None, with_command=True):
         # Called from Container
-        if container is not None:
-            if tunnel.container() != container:
-                raise ValueError("Tried to destroy a tunnel actually connected to a different container")
         tunnel.destroy(with_command)
         del self.tunnels[tunnel.uuid]
 
@@ -389,14 +364,6 @@ class Location(Waitable):
             logging.error(msg.params['log'])
         else:
             logging.info(msg.params['log'])
-
-    def _handle_queue_single(self, foo=None, bar=None):
-        """Handle a single item on the event queue"""
-        cmd, params = self.call_queue.get()
-        if cmd is None:
-            raise params  # no command means raise this exception
-        else:
-            cmd(*params)  # call the thing
 
     def _ensure_node(self, msg):
         if msg.params['node'] not in self.nodes:

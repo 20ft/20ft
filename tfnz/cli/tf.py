@@ -226,9 +226,8 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                                          env=environment,
                                          pre_boot_files=preboot,
                                          volumes=volumes,
-                                         stdout_callback=(Interactive.stdout_callback if args.interactive
-                                                          else lambda _, out: print(out.decode(), end='', flush=True)),
-                                         termination_callback=location.stop,
+                                         stdout_callback=Interactive.stdout_callback,
+                                         termination_callback=location.disconnect,
                                          command=args.command,
                                          sleep=args.sleep)
         container.wait_until_ready()  # a transport for exceptions

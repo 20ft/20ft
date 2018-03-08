@@ -167,6 +167,7 @@ class Interactive:
         self.stdin_attr = None
         self.location = location
         self.container = container
+        container.stdout_callback = Interactive.stdout_callback
         self.exit_read, self.exit_write = os.pipe()
         self.thread = Thread(target=self.stdin_loop, name="Stdin loop")
         self.thread.start()
@@ -190,8 +191,8 @@ class Interactive:
     @staticmethod
     def stdout_callback(obj, out):
         # strip nasty control code things
-        parts = re.split(b'\x1b\[\d*n', out, maxsplit=1)
-        sys.stdout.buffer.write(parts[0] + (parts[1] if len(parts) > 1 else b''))
+        parts = re.split(b'\x1b\[\d*n', out)
+        sys.stdout.buffer.write(b''.join(parts))
         sys.stdout.flush()
 
     def stop(self, obj=None, code=None):
