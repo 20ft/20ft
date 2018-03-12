@@ -134,7 +134,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # connect
     location = None
     try:
-        location = Location(args.location, location_ip=args.local, quiet=args.quiet, debug_log=args.verbose)
+        location = Location(location=args.location, location_ip=args.local, quiet=args.quiet, debug_log=args.verbose)
     except BaseException as e:
         print("Failed while connecting to location: " + str(e), file=sys.stderr)
         return location
@@ -255,7 +255,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     try:
         if args.web is not None:
             container.wait_until_ready()
-            clstr = Cluster([container], rewrite=rewrite)
+            clstr = Cluster(containers=[container], rewrite=rewrite)
             ep = location.endpoint_for(endpoint)
             ep.publish(clstr, fqdns[0], ssl=cert)
     except ValueError as e:

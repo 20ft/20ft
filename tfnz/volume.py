@@ -19,7 +19,7 @@ from . import Taggable
 
 class Volume(Taggable):
     def __init__(self, location, uuid, tag):
-        super().__init__(location.user_pk, uuid, tag)
+        super().__init__(location.user_pk, uuid, tag=tag)
         # Do not construct directly, use Location.create_volume
         self.connection = weakref.ref(location.conn)
 

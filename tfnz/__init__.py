@@ -34,7 +34,7 @@ class Waitable:
         if self.wait_lock.locked():
             self.wait_lock.release()
 
-    def wait_until_ready(self, timeout: Optional[int]=30):
+    def wait_until_ready(self, timeout: Optional[int]=60):
         """Blocks waiting for a (normally asynchronous) update indicating the object is ready."""
         # this lock is used for waiting on while uploading layers, needs to be long
         acquired = self.wait_lock.acquire(timeout=timeout)
@@ -84,7 +84,7 @@ class Connectable:
         self.conn().send_blocking_cmd(b'allow_connection', {'node': self.node_pk,
                                                             'container': self.uuid,
                                                             'ip': obj.ip})
-        self.conn().send_blocking_cmd(b'ping', {'node': self.node_pk,
+        self.conn().send_blocking_cmd(b'ping', {'node': obj.node_pk,
                                                 'container': obj.uuid,
                                                 'ip': self.ip})
         logging.info("Allowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid))

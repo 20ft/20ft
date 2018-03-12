@@ -23,21 +23,48 @@ from tfnz.container import Container
 class Cluster:
     """An object representing a collection of containers, load balanced and published to an endpoint"""
 
-    def __init__(self, containers: List[Container], rewrite: Optional[str]=None):
+    def __init__(self, *, containers: Optional[List[Container]]=None, rewrite: Optional[str]=None):
+        """Create a cluster.
+
+        :param containers: An optional list of containers to initialise the cluster with.
+        :param rewrite: An optional string to be rewritten into the http host header."""
         self.uuid = None
+        self.conn = None
         self.containers = {}
         self.rewrite = rewrite
         for container in containers:
-            container.wait_until_ready()
-            self._add(container)
+            self.add_container(container)
+
+    def add_container(self, container):
+        """Add a container to the cluster.
+
+        :param container: the container to add."""
+        if container.uuid in self.containers:
+            pass
+        container.wait_until_ready()
+        self.containers[container.uuid] = container
+
+        # let the server know, maybe
+        if self.conn is not None:
+            self.conn().send_blocking_cmd(b'add_to_cluster', {'cluster': self.uuid,
+                                                              'container': container.uuid})
+
+    def remove_container(self, container):
+        """Remove a container from the cluster.
+
+        :param container: the container to remove."""
+        try:
+            del self.containers[container.uuid]
+
+            # let the server know, maybe
+            if self.conn is not None:
+                self.conn().send_cmd(b'remove_from_cluster', {'cluster': self.uuid,
+                                                              'container': container.uuid})
+        except KeyError:  # was not in the list of containers
+            pass
 
     def uuids(self):
         return self.containers.keys()
-
-    def _add(self, container):
-        if container.uuid in self.containers:
-            pass
-        self.containers[container.uuid] = container
 
     def __repr__(self):
         return "<Cluster '%s' containers=%d>" % (self.uuid, len(self.containers))
@@ -50,14 +77,20 @@ class WebEndpoint:
         """Do not construct directly, see location.endpoints"""
         self.conn = weakref.ref(conn)
         self.domain = domain
-        self.domainchars = len(domain)
         self.clusters = {}  # uuid to cluster
 
     def publish(self, cluster: Cluster, fqdn: str, *, ssl: Optional[Tuple]=None):
+        """Publish a cluster onto an http/https endpoint.
+        To update a cluster, merely re-publish onto the same endpoint.
+
+        :param cluster: The cluster to publish.
+        :param fqdn: The fqdn to publish.
+        :param ssl: A tuple of (cert.pem, key.pem) or (cert.pem, key.pem, cert.intermediate)."""
         # checks
         if not fqdn.endswith(self.domain):
             raise ValueError("Web endpoint for (%s) cannot publish: %s" % (self.domain, fqdn))
-        subdomain = fqdn[:-self.domainchars]
+        if cluster.uuid in self.clusters:  # already published
+            return
 
         # ssl check and read
         combined = None
@@ -75,19 +108,25 @@ class WebEndpoint:
                     combined += f.read()
 
         # tell the location to publish
+        subdomain = fqdn[:-len(self.domain)]
         msg = self.conn().send_blocking_cmd(b'publish_web', {'domain': self.domain,
                                                              'subdomain': subdomain,
                                                              'rewrite': cluster.rewrite,
                                                              'ssl': combined,
                                                              'containers': list(cluster.uuids())})
         logging.info("Published (%s) at: %s" % (msg.uuid.decode(), subdomain + self.domain))
+
         cluster.uuid = msg.uuid
+        cluster.conn = weakref.ref(self.conn())
         self.clusters[msg.uuid] = cluster
         return msg.uuid
 
     @staticmethod
     def wait_http_200(fqdn: str, *, ssl: Optional[bool]=False):
-        """Poll the gateway for an http 200 from this cluster"""
+        """Poll the gateway for an http 200 from this cluster.
+
+        :param fqdn: the fqdn to poll.
+        :param ssl: optionally connect via ssl."""
         url = '%s://%s' % ('https' if ssl else 'http', fqdn)
         attempts_remaining = 30
         while True:
@@ -103,9 +142,16 @@ class WebEndpoint:
             time.sleep(1)
 
     def unpublish(self, cluster: Cluster):
-        self.conn().send_cmd(b'unpublish_web', {'uuid': cluster.uuid})
+        """Remove a cluster from a web endpoint.
+
+        :param cluster: the cluster to remove."""
+        if cluster.uuid is None or cluster.uuid not in self.clusters:  # not published anyway
+            return
+
+        self.conn().send_cmd(b'unpublish_web', {'cluster': cluster.uuid})
         logging.info("Unpublished: " + cluster.uuid.decode())
+        cluster.conn = None
         del self.clusters[cluster.uuid]
 
     def __repr__(self):
-        return "<WebEndpoint '%s' domain=%s>" % (self.uuid.decode(), self.domain)
+        return "<WebEndpoint '%s' clusters=%d>" % (self.domain, len(self.clusters))

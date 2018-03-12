@@ -88,7 +88,7 @@ class Node:
                                                                    'tag': advertised_tag})
 
         # Make it go...
-        descr = Docker.description(image, self.conn())
+        descr = Docker.description(image, conn=self.conn())
 
         if command is not None:
             descr['Config']['Entrypoint'] = []
@@ -131,7 +131,7 @@ class Node:
     def _internal_destroy(self):
         """Called when the node needs to clean itself up"""
         # fake container status update messages
-        for ctr in self.containers.values():
+        for ctr in list(self.containers.values()):
             msg = Message()
             msg.uuid = ctr.uuid
             msg.params = {'status': 'destroyed'}
@@ -155,7 +155,7 @@ class Node:
 
         if 'status' not in msg.params:
             if container.stdout_callback is not None:
-                container.stdout_callback(container, msg.bulk)
+                self.parent().call_on_main(container.stdout_callback, (container, msg.bulk))
             return
 
         if msg.params['status'] == 'running':

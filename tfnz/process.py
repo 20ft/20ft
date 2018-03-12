@@ -13,7 +13,6 @@
 
 import weakref
 import logging
-from typing import Optional
 from . import Killable
 
 
@@ -55,6 +54,7 @@ class Process(Killable):
                                                 'process': self.uuid}, bulk=data)
 
     def destroy(self, with_command=True):
+        # Don't call me, use container.destroy_process
         if self.bail_if_dead():
             return
 
@@ -87,12 +87,12 @@ class Process(Killable):
         # Stderr?
         if 'stderr' in msg.params:
             if self.stderr_callback is not None:
-                self.stderr_callback(self, msg.bulk)
+                self.location().call_on_main(self.stderr_callback, (self, msg.bulk))
             return
 
         # Otherwise we're just data
         if self.data_callback is not None:
-            self.data_callback(self, msg.bulk)
+            self.location().call_on_main(self.data_callback, (self, msg.bulk))
 
     def __repr__(self):
         return "<Process '%s'>" % self.uuid.decode()

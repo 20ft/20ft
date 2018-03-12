@@ -76,7 +76,7 @@ class SilverStripe:
             w.spawn_process('php-fpm7')
 
         # gather together and serve into an endpoint
-        self.cluster = Cluster(self.webservers)
+        self.cluster = Cluster(containers=self.webservers)
         location.endpoint_for(fqdn).publish(self.cluster, fqdn)
 
         # wait until we're actually able to serve

@@ -41,11 +41,13 @@ class Location(Waitable):
 
         :param location: An optional fqdn of the location (i.e. tiny.20ft.nz).
         :param location_ip: A optional explicit ip for the broker.
+        :param new_node_callback: An optional callback for when a node is created ... signature (object)
         :param quiet: Set true to not configure logging.
         :param debug_log: Set true to log at DEBUG logging level.
         """
 
-    def __init__(self, location: Optional[str]=None, *, location_ip: Optional[str]=None,
+    def __init__(self, *, location: Optional[str]=None, location_ip: Optional[str]=None,
+                 new_node_callback: Optional[object]=None,
                  quiet: Optional[bool]=False, debug_log: Optional[bool]=False):
         super().__init__()
 
@@ -53,8 +55,7 @@ class Location(Waitable):
         self.location = location if location is not None else default_location(prefix="~/.20ft")
         self.nodes = {}
         self.volumes = TaggedCollection()
-        self.last_best_nodes = None
-        self.last_best_node_idx = None
+        self.new_node_callback = new_node_callback
         self.tunnels = {}
         self.endpoints = {}
         self.domains = None
@@ -93,7 +94,7 @@ class Location(Waitable):
         except termios.error:
             self.stdin_attr = None
 
-    def run(self, timeout=None):
+    def run(self, *, timeout: Optional[float]=None):
         """The main thread blocks waiting for call_on_main to be called.
         If we don't have a message queue on the main thread, callbacks won't be able to use blocking calls.
         With a timeout it is limited to running for that amount of time....
@@ -154,7 +155,7 @@ class Location(Waitable):
 
         :return: A list of node objects.
 
-        Note that the difference in processor performance is accounted for and is measured in passmarks."""
+        Note that the difference in processor width/performance is accounted for and is measured in passmarks."""
         nodes = self.nodes.values()
         if len(nodes) == 0:
             raise ValueError("The location has no nodes")
@@ -162,10 +163,10 @@ class Location(Waitable):
                       key=lambda node: node.stats['cpu'] + node.stats['memory'] - 10 * node.stats['paging'],
                       reverse=True)
 
-    def create_volume(self, tag: Optional[str]=None, async: Optional[bool]=True) -> Volume:
+    def create_volume(self, *, tag: Optional[str]=None, async: Optional[bool]=True) -> Volume:
         """Creates a new volume
 
-        :param tag: A globally visible tag (to make the volume globally visible).
+        :param tag: An optional globally visible tag (to make the volume globally visible).
         :param async: Enables asynchronous writes.
         :return: The new Volume object.
 
@@ -210,7 +211,7 @@ class Location(Waitable):
         try:
             return self.volumes.get(self.user_pk, key)
         except KeyError:
-            return self.create_volume(key)
+            return self.create_volume(tag=key)
 
     def endpoint_for(self, fqdn: str) -> WebEndpoint:
         """Return a WebEndpoint for the given fqdn.
@@ -230,15 +231,14 @@ class Location(Waitable):
         msg = self.conn.send_blocking_cmd(b'find_tag', {'tag': tag})
         return ExternalContainer(self.conn, msg.params['uuid'], msg.params['node'], msg.params['ip'])
 
-    def ensure_image_uploaded(self, docker_image_id: str, descr: Optional[dict]=None) -> List[str]:
+    def ensure_image_uploaded(self, docker_image_id: str, *, descr: Optional[dict]=None) -> List[str]:
         """Sends missing docker layers to the location.
 
         :param docker_image_id: use the short form id or name:tag
         :param descr: a previously found docker description
         :return: A list of layer sha256 identifiers
 
-        This is not a necessary step and is implied when spawning a container unless specifically disabled.
-        The layers are uploaded on a background thread."""
+        This is not a necessary step and is implied when spawning a container unless specifically disabled."""
 
         # Get a description
         if descr is None:
@@ -258,7 +258,7 @@ class Location(Waitable):
 
     @staticmethod
     def all_locations():
-        """Returns a list of 20ft locations that have an account on this machine"""
+        """Returns a list of 20ft locations that have an account on this machine."""
         dirname = os.path.expanduser('~/.20ft/')
         all_files = os.listdir(dirname)
         locations = []
@@ -352,7 +352,12 @@ class Location(Waitable):
     def _update_stats(self, msg):
         node = self._ensure_node(msg)
         node._update_stats(msg.params['stats'])
-        self.last_best_nodes = None  # force a refresh next time 'best node' is called
+
+    def _node_created(self, msg):
+        n = Node(self, msg.params['node'], self.conn,  {'memory': 1000, 'cpu': 1000, 'paging': 0, 'ave_start_time': 0})
+        self.nodes[msg.params['node']] = n
+        if self.new_node_callback is not None:
+            self.call_on_main(self.new_node_callback, n)
 
     def _node_destroyed(self, msg):
         node = self._ensure_node(msg)
@@ -372,6 +377,7 @@ class Location(Waitable):
 
     _commands = {b'resource_offer': ([], False),
                  b'update_stats': (['node', 'stats'], False),
+                 b'node_created': (['node'], False),
                  b'node_destroyed': (['node'], False),
                  b'from_proxy': (['proxy'], False),
                  b'close_proxy': (['proxy'], False),

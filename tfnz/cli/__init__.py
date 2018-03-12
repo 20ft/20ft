@@ -57,7 +57,7 @@ def generic_cli(parser, implementations, *, quiet=True, location=True):
     # go
     try:
         if location:
-            loc = Location(dl, location_ip=args.local, quiet=quiet)
+            loc = Location(location=dl, location_ip=args.local, quiet=quiet)
         else:
             if not quiet:
                 logging.basicConfig(level=logging.DEBUG)

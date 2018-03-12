@@ -72,7 +72,7 @@ class Container(Waitable, Killable, Connectable):
         self.wait_until_ready()
         self.location()._wait_tcp(self, dest_port)
 
-    def attach_tunnel(self, dest_port: int, localport: Optional[int]=None, bind: Optional[str]=None) -> Tunnel:
+    def attach_tunnel(self, dest_port: int, *, localport: Optional[int]=None, bind: Optional[str]=None) -> Tunnel:
         """Creates a TCP proxy between localhost and a container.
 
         :param dest_port: The TCP port on the container to connect to.
@@ -87,7 +87,7 @@ class Container(Waitable, Killable, Connectable):
         localport = dest_port if localport is None else localport
         return self.location()._tunnel_onto(self, dest_port, localport, bind)
 
-    def wait_http_200(self, dest_port: Optional[int]=80, fqdn: Optional[str]='localhost', path: Optional[str]='') \
+    def wait_http_200(self, *, dest_port: Optional[int]=80, fqdn: Optional[str]='localhost', path: Optional[str]='') \
             -> Tunnel:
         """Poll until an http 200 is returned.
 
@@ -200,7 +200,7 @@ class Container(Waitable, Killable, Connectable):
             stderr_callback(self, msg.params['stderr'])
         return msg.params['stdout'], msg.params['stderr'], msg.params['exit_code']
 
-    def spawn_shell(self,
+    def spawn_shell(self, *,
                     data_callback: Optional[Callable]=None,
                     termination_callback: Optional[Callable]=None,
                     echo: bool=False) -> Process:
@@ -292,7 +292,7 @@ class Container(Waitable, Killable, Connectable):
                                                     'container': self.uuid,
                                                     'filename': filename}, bulk=data)
 
-    def reboot(self, reset_filesystem: Optional[bool]=False):
+    def reboot(self, *, reset_filesystem: Optional[bool]=False):
         """Synchronously reboot a container, optionally resetting the filesystem.
 
         :param reset_filesystem: Reset the container's filesystem to its 'as booted' state."""

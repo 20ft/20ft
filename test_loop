@@ -1,4 +1,4 @@
 #!/bin/sh
 while true; do
-	python3 tf_test.py
+	python3 tf_test.py -v
 done
