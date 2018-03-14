@@ -7,7 +7,7 @@ The quick start assumes you have already received an invite email. If not, pleas
 Run on AWS
 ==========
 
-Use the `ready made AMI <https://ap-southeast-2.console.aws.amazon.com/ec2/v2/home?region=ap-southeast-2#LaunchInstanceWizard:ami=ami-5435f336>`_ (runs fine on t2.nano, login with alpine@) and create an account using the command sent with your invite email.
+Use the `ready made AMI <https://ap-southeast-2.console.aws.amazon.com/ec2/v2/home?region=ap-southeast-2#LaunchInstanceWizard:ami=ami-dba261b9>`_ (runs fine on t2.nano, login with alpine@) and create an account using the command sent with your invite email.
 
 To Install on my Local Machine
 ==============================
