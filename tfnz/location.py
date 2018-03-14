@@ -126,8 +126,11 @@ class Location(Waitable):
 
         # reset terminal attributes
         if self.stdin_attr is not None:
-            termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, self.stdin_attr)
-            print('', end='\r', flush=True)
+            try:
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, self.stdin_attr)
+                print('', end='\r', flush=True)
+            except ValueError:
+                pass  # stdin is closed for some reason
 
         # end the run loop by raising an Empty exception
         self.call_queue.put(None, Empty)
