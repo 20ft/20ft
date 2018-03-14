@@ -14,14 +14,14 @@
 from setuptools import setup, find_packages
 
 setup(name='tfnz',
-      version='1.2.32',
+      version='1.2.33',
       author='David Preece',
       author_email='davep@20ft.nz',
       url='https://20ft.nz',
       license='BSD',
       packages=find_packages(exclude=["messidge*", "docs*", "build*"]),
       install_requires=['pyzmq', 'libnacl', 'py3dns', 'requests', 'shortuuid', 'cbor',
-                        'paramiko', 'psutil', 'requests_unixsocket', 'bottle', 'messidge'],
+                        'paramiko', 'psutil', 'requests_unixsocket', 'bottle', 'messidge>=1.2.2'],
       description='SDK for 20ft.nz',
       long_description="The SDK for the 20ft.nz container PaaS. " +
                        "Main documentation is at http://docs.20ft.nz",
