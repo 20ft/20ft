@@ -238,7 +238,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # create the tunnels
     try:
         for m in portmap:
-            container.attach_tunnel(m[1], m[0])
+            container.attach_tunnel(m[1], localport=m[0])
     except OSError as e:
         print("Failed while creating a tunnel onto the container: " + str(e))
         return location
