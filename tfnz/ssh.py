@@ -110,13 +110,13 @@ class SshServer(Waitable):
 class SshTransport(paramiko.ServerInterface):
     """A Transport is the per-client abstraction, it will spawn channels."""
 
-    def __init__(self, parent, socket, host_key):
+    def __init__(self, parent, skt, host_key):
         self.uuid = shortuuid.uuid()
         self.parent = weakref.ref(parent)
         self.container = weakref.ref(parent.container())
         self.lead_channel = None
-        self.socket = socket
-        self.paramiko_transport = paramiko.Transport(socket)
+        self.socket = skt
+        self.paramiko_transport = paramiko.Transport(skt)
         self.paramiko_transport.add_server_key(host_key)
         self.paramiko_transport.set_subsystem_handler('sftp', paramiko.SFTPServer, Sftp)
         self.paramiko_transport.start_server(server=self)  # for this one connection

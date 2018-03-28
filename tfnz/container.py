@@ -14,8 +14,8 @@
 import logging
 import shortuuid
 import weakref
-from typing import Optional, List, Union, Callable, Any, Tuple
-from . import Waitable, Killable, Connectable
+from typing import Optional, List, Callable
+from . import Waitable, Killable, Connectable, Taggable
 from .tunnel import Tunnel
 from .process import Process
 from .ssh import SshServer
@@ -65,12 +65,12 @@ class Container(Waitable, Killable, Connectable):
     def wait_tcp(self, dest_port):
         """Connects and disconnects a single connection onto this container and a given port.
 
-        If your sevice is only capable of .accept'ing once, do not use this.
+        If your service is only capable of .accept'ing once, do not use this.
 
         :param dest_port: destination tcp port < 1024 is fine."""
         self.ensure_alive()
         self.wait_until_ready()
-        self.location()._wait_tcp(self, dest_port)
+        self.location().wait_tcp(self, dest_port)
 
     def attach_tunnel(self, dest_port: int, *, localport: Optional[int]=None, bind: Optional[str]=None) -> Tunnel:
         """Creates a TCP proxy between localhost and a container.
@@ -85,7 +85,7 @@ class Container(Waitable, Killable, Connectable):
         """
         self.ensure_alive()
         localport = dest_port if localport is None else localport
-        return self.location()._tunnel_onto(self, dest_port, localport, bind)
+        return self.location().tunnel_onto(self, dest_port, localport, bind)
 
     def wait_http_200(self, *, dest_port: Optional[int]=80, fqdn: Optional[str]='localhost', path: Optional[str]='') \
             -> Tunnel:
@@ -98,14 +98,14 @@ class Container(Waitable, Killable, Connectable):
         """
         self.ensure_alive()
         self.wait_until_ready()
-        return self.location()._wait_http_200(self, dest_port, fqdn, path)
+        return self.location().wait_http_200(self, dest_port, fqdn, path)
 
     def destroy_tunnel(self, tunnel: Tunnel):
         """Destroy a tunnel
 
         :param tunnel: The tunnel to be destroyed."""
         self.ensure_alive()
-        self.location()._destroy_tunnel(tunnel, container=self)
+        self.location().destroy_tunnel(tunnel, container=self)
 
     def all_tunnels(self) -> List[Tunnel]:
         """Returns all the tunnels connected to this container
@@ -307,10 +307,10 @@ class Container(Waitable, Killable, Connectable):
         self.conn().send_cmd(b'reboot_container', {'node': self.parent().pk,
                                                    'container': self.uuid,
                                                    'reset_filesystem': reset_filesystem},
-                             reply_callback=self.parent()._container_status_update)
+                             reply_callback=self.parent().container_status_update)
         self.wait_until_ready()
 
-    def _internal_destroy(self, send_cmd=True):
+    def internal_destroy(self, send_cmd=True):
         # Destroy this container
         if self.bail_if_dead():
             return
@@ -323,7 +323,7 @@ class Container(Waitable, Killable, Connectable):
 
         # Destroy any tunnels
         for tun in list(self.all_tunnels()):
-            self.location()._destroy_tunnel(tun, self, with_command=False)
+            self.location().destroy_tunnel(tun, self, with_command=False)
 
         # Destroy any ssh servers
         for svr in list(self.ssh_servers.values()):
@@ -358,15 +358,17 @@ class Container(Waitable, Killable, Connectable):
         return "<Container `%s` image=%s ip=%s>" % (self.uuid.decode(), self.image, self.ip)
 
 
-class ExternalContainer(Connectable):
-    """An object representing a container managed by another session (and the same user) but advertised using a tag"""
+class ExternalContainer(Connectable, Taggable):
+    """An object representing a container managed by another session (and the same user) but advertised using a tag.
+    Do not instantiate directly, use location.container"""
 
-    def __init__(self, conn, uuid, node, ip):
-        super().__init__(conn, uuid, node, ip)
+    def __init__(self, loc, uuid, node, ip, tag, *, termination_callback: Optional=None):
+        Connectable.__init__(self, loc.conn, uuid, node, ip)
+        Taggable.__init__(self, loc.user_pk, uuid, tag)
 
     def private_ip(self):
         """Reports the container's ip address"""
         return self.ip
 
     def __repr__(self):
-        return "<ExternalContainer '%s' ip=%s>" % (self.uuid.decode(), self.ip)
+        return "<ExternalContainer '%s' %s ip=%s>" % (self.tag, self.uuid.decode(), self.ip)

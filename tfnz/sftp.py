@@ -14,7 +14,8 @@
 import os
 import weakref
 import logging
-from paramiko import SFTPServerInterface, SFTPAttributes, SFTPHandle, SFTP_OK
+from paramiko import SFTPServerInterface, SFTPAttributes, SFTPHandle
+from paramiko.sftp import SFTP_OK
 from paramiko.sftp_server import SFTPServer
 
 
@@ -136,4 +137,3 @@ class SftpFile(SFTPHandle):
     def close(self):
         logging.debug("Closed a file via sftp: " + self.filename)
         return SFTP_OK
-

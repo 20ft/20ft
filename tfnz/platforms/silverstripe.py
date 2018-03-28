@@ -44,7 +44,7 @@ class SilverStripe:
         # see if the data volume has been initialised
         try:
             first_server.fetch("/site/index.php")
-        except ValueError as e:
+        except ValueError:
             # need to initialise - /site is visible on all servers
             logging.info("Initialising data volume: " + volume.uuid.decode())
             first_server.run_process('cp -r /silverstripe/* /site/')

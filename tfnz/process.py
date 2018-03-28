@@ -66,7 +66,7 @@ class Process(Killable):
         logging.info("Terminated client side: %s" % self.uuid.decode())
         self.mark_as_dead()
         if self.termination_callback is not None:
-            self.termination_callback(self, 0)
+            self.location().call_on_main(self.termination_callback, (self, 0))
 
     def give_me_messages(self, msg):
         if self.bail_if_dead():

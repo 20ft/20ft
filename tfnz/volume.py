@@ -13,15 +13,17 @@
 
 import weakref
 import logging
-import os.path
+import os
 from . import Taggable
 
 
 class Volume(Taggable):
-    def __init__(self, location, uuid, tag):
+    def __init__(self, location, uuid, tag, *, termination_callback=None):
         super().__init__(location.user_pk, uuid, tag=tag)
         # Do not construct directly, use Location.create_volume
+        self.location = weakref.ref(location)
         self.connection = weakref.ref(location.conn)
+        self.termination_callback = termination_callback
 
     def snapshot(self):
         """Mark the current state of the volume as being it's initial state."""
@@ -46,6 +48,11 @@ class Volume(Taggable):
                 if c[:len(p)] == p:
                     return c, p  # c is a subtree of p
         return None
+
+    def internal_destroy(self):
+        if self.termination_callback is not None:
+            self.location().call_on_main(self.termination_callback, (self, 0))
+
 
     def __repr__(self):
         return "<Volume '%s'>" % self.namespaced_display_name()

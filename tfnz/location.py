@@ -15,7 +15,6 @@ import logging
 import socket
 import time
 import os
-import os.path
 import requests
 import requests.exceptions
 import termios
@@ -47,7 +46,7 @@ class Location(Waitable):
         """
 
     def __init__(self, *, location: Optional[str]=None, location_ip: Optional[str]=None,
-                 new_node_callback: Optional[object]=None,
+                 new_node_callback: Optional=None,
                  quiet: Optional[bool]=False, debug_log: Optional[bool]=False):
         super().__init__()
 
@@ -55,6 +54,7 @@ class Location(Waitable):
         self.location = location if location is not None else default_location(prefix="~/.20ft")
         self.nodes = {}
         self.volumes = TaggedCollection()
+        self.externals = TaggedCollection()
         self.new_node_callback = new_node_callback
         self.tunnels = {}
         self.endpoints = {}
@@ -91,7 +91,7 @@ class Location(Waitable):
         # capture stdin attributes
         try:
             self.stdin_attr = termios.tcgetattr(sys.stdin.fileno())
-        except termios.error:
+        except (termios.error, AttributeError):
             self.stdin_attr = None
 
     def run(self, *, timeout: Optional[float]=None):
@@ -166,11 +166,13 @@ class Location(Waitable):
                       key=lambda node: node.stats['cpu'] + node.stats['memory'] - 10 * node.stats['paging'],
                       reverse=True)
 
-    def create_volume(self, *, tag: Optional[str]=None, async: Optional[bool]=True) -> Volume:
+    def create_volume(self, *, tag: Optional[str]=None, async: Optional[bool]=True,
+                      termination_callback: Optional=None) -> Volume:
         """Creates a new volume
 
         :param tag: An optional globally visible tag (to make the volume globally visible).
         :param async: Enables asynchronous writes.
+        :param termination_callback: a callback for if this volume is destroyed - signature (container, returncode).
         :return: The new Volume object.
 
         Note that asynchronous writes cannot damage a ZFS filesystem although the physical state may lag behind the
@@ -180,7 +182,7 @@ class Location(Waitable):
                                                              'tag': tag,
                                                              'async': async})
         logging.info("Created volume: " + msg.uuid.decode())
-        vol = Volume(self, msg.uuid, tag)
+        vol = Volume(self, msg.uuid, tag, termination_callback=termination_callback)
         self.volumes.add(vol)
         return vol
 
@@ -191,6 +193,7 @@ class Location(Waitable):
         self.conn.send_blocking_cmd(b'destroy_volume', {'user': self.user_pk,
                                                         'volume': volume.uuid})
         logging.info("Destroyed volume: " + volume.uuid.decode())
+        volume.internal_destroy()
         self.volumes.remove(volume)
 
     def all_volumes(self) -> List[Volume]:
@@ -226,13 +229,12 @@ class Location(Waitable):
                 return ep
         raise ValueError("There is no endpoint capable of serving: " + fqdn)
 
-    def container_for(self, tag: Union[bytes, str]) -> ExternalContainer:
-        """Return a connection onto a container owned by another session, but advertised through a tag.
+    def external_container(self, key: Union[bytes, str]) -> ExternalContainer:
+        """Return the external container with this uuid, tag or display_name.
 
-        :param tag: The tag the container was created with.
+        :param key: The uuid or tag of the container to be returned.
         :return: An ExternalContainer object."""
-        msg = self.conn.send_blocking_cmd(b'find_tag', {'tag': tag})
-        return ExternalContainer(self.conn, msg.params['uuid'], msg.params['node'], msg.params['ip'])
+        return self.externals.get(self.user_pk, key)
 
     def ensure_image_uploaded(self, docker_image_id: str, *, descr: Optional[dict]=None) -> List[str]:
         """Sends missing docker layers to the location.
@@ -245,7 +247,7 @@ class Location(Waitable):
 
         # Get a description
         if descr is None:
-            descr = Docker.description(docker_image_id, self.conn)
+            descr = Docker.description(docker_image_id, conn=self.conn)
         else:
             # update if an explicit description has been passed
             self.conn.send_cmd(b'cache_description', {'image_id': docker_image_id, 'description': descr})
@@ -278,7 +280,7 @@ class Location(Waitable):
         self.last_heartbeat = time.time()
         self.conn.send_cmd(b'heartbeat')
 
-    def _tunnel_onto(self, container, port, localport, bind, *, timeout=30) -> Tunnel:
+    def tunnel_onto(self, container, port, localport, bind, *, timeout=30) -> Tunnel:
         # called from Container
         if isinstance(port, str):
             port = int(port)
@@ -292,12 +294,12 @@ class Location(Waitable):
         tunnel.connect()  # connection done 'late' so we can get the tunnel into tunnels first
         return tunnel
 
-    def _wait_tcp(self, container, dest_port):
+    def wait_tcp(self, container, dest_port):
         # called from Container - raises a ValueError if it cannot connect before the timeout
         logging.info("Waiting on tcp (%d): %s" % (dest_port, container.uuid.decode()))
         self.conn.send_blocking_cmd(b'wait_tcp', {'container': container.uuid, 'port': dest_port}, timeout=10)
 
-    def _wait_http_200(self, container, dest_port, fqdn, path, localport=None) -> Tunnel:
+    def wait_http_200(self, container, dest_port, fqdn, path, localport=None) -> Tunnel:
         # called from Container
         # needs to resolve to localhost because that's where the tunnel will be
         addr = socket.gethostbyname(fqdn)
@@ -306,7 +308,7 @@ class Location(Waitable):
         logging.info("Waiting on http 200: " + container.uuid.decode())
 
         # OK
-        tnl = self._tunnel_onto(container, dest_port, localport, None)  # has a 30 sec timeout by default
+        tnl = self.tunnel_onto(container, dest_port, localport, None)  # has a 30 sec timeout by default
         logging.debug("Tunnel connected onto: " + container.uuid.decode())
 
         # the server side polls so all we need to do is make the request
@@ -318,7 +320,7 @@ class Location(Waitable):
         else:
             raise ValueError("Could not connect to: " + url)
 
-    def _destroy_tunnel(self, tunnel: Tunnel, container=None, with_command=True):
+    def destroy_tunnel(self, tunnel: Tunnel, container=None, with_command=True):
         # Called from Container
         tunnel.destroy(with_command)
         del self.tunnels[tunnel.uuid]
@@ -346,26 +348,40 @@ class Location(Waitable):
             logging.debug("Asked to close a proxy that we already closed")
 
     def _resource_offer(self, msg):
-        self.endpoints = {dom['domain']: WebEndpoint(self.conn, dom['domain']) for dom in msg.params['domains']}
+        self.endpoints = {dom['domain']: WebEndpoint(self, dom['domain']) for dom in msg.params['domains']}
         self.nodes = {node[0]: Node(self, node[0], self.conn, node[1]) for node in msg.params['nodes']}
         self.volumes = TaggedCollection([Volume(self, vol['uuid'], vol['tag']) for vol in msg.params['volumes']])
+        self.externals = TaggedCollection([ExternalContainer(self, xtn['uuid'], xtn['node'], xtn['ip'], xtn['tag'])
+                                          for xtn in msg.params['externals']])
 
         self.mark_as_ready()  # only ready once we've dealt with the resource offer
 
     def _update_stats(self, msg):
         node = self._ensure_node(msg)
-        node._update_stats(msg.params['stats'])
+        node.update_stats(msg.params['stats'])
 
     def _node_created(self, msg):
+        logging.debug("Notify - node created: " + b64encode(msg.params['node']).decode())
         n = Node(self, msg.params['node'], self.conn,  {'memory': 1000, 'cpu': 1000, 'paging': 0, 'ave_start_time': 0})
         self.nodes[msg.params['node']] = n
         if self.new_node_callback is not None:
             self.call_on_main(self.new_node_callback, n)
 
     def _node_destroyed(self, msg):
+        logging.debug("Notify - node destroyed: " + b64encode(msg.params['node']).decode())
         node = self._ensure_node(msg)
-        node._internal_destroy()
+        node.internal_destroy()
         del self.nodes[msg.params['node']]
+
+    def _volume_created(self, msg):
+        logging.debug("Notify - volume created: " + msg.params['volume'].decode())
+        self.volumes.add(Volume(self, msg.params['volume'], msg.params['tag']))
+
+    def _volume_destroyed(self, msg):
+        logging.debug("Notify - volume destroyed: " + msg.params['volume'].decode())
+        vol = self.ensure_volume(msg.params['volume'])
+        vol.internal_destroy()
+        self.volumes.remove(vol)
 
     def _log(self, msg):
         if msg.params['error']:
@@ -378,12 +394,21 @@ class Location(Waitable):
             raise ValueError("Didn't know about node: " + b64encode(msg.params['node']).decode())
         return self.nodes[msg.params['node']]
 
+    def _ensure_volume(self, msg):
+        if msg.params['volume'] not in self.volumes:
+            raise ValueError("Didn't know about volume: " + b64encode(msg.params['node']).decode())
+        return self.volumes[msg.params['volume']]
+
     _commands = {b'resource_offer': ([], False),
-                 b'update_stats': (['node', 'stats'], False),
                  b'node_created': (['node'], False),
                  b'node_destroyed': (['node'], False),
+                 b'volume_created': (['volume', 'tag'], False),
+                 b'volume_destroyed': (['volume'], False),
+                 b'external_created': (['container', 'tag'], False),
+                 b'external_destroyed': (['container'], False),
                  b'from_proxy': (['proxy'], False),
                  b'close_proxy': (['proxy'], False),
+                 b'update_stats': (['node', 'stats'], False),
                  b'log': (['error', 'log'], False)}
 
     def __repr__(self):

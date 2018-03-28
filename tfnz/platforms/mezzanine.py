@@ -26,7 +26,6 @@ class Mezzanine:
     :param location: A location (object) to connect to.
     :param volume: A volume (object) to use as a persistent store - will be mounted on static/media/uploads
     :param sql_volume: A volume to connect to a Postgres server for SQL storage.
-    :param db: An instance of a Postgresql component.
     :param fqdn: The FQDN to publish to.
     :param app_name: Name of the application (used to create file paths).
     :param image: The image to use (assumed derived 'FROM tfnz/mezzanine')

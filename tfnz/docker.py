@@ -82,7 +82,6 @@ class Docker:
         except requests.exceptions.ConnectionError:
             Docker._docker_warning()
 
-
     @staticmethod
     def last_image() -> str:
         """Finding the most recent docker image on this machine.

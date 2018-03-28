@@ -73,9 +73,9 @@ class Cluster:
 class WebEndpoint:
     """An HTTP proxy that can expose a number of clusters"""
 
-    def __init__(self, conn: 'Connection', domain: str):
+    def __init__(self, location, domain: str):
         """Do not construct directly, see location.endpoints"""
-        self.conn = weakref.ref(conn)
+        self.conn = weakref.ref(location.conn)
         self.domain = domain
         self.clusters = {}  # uuid to cluster
 

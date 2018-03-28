@@ -39,9 +39,9 @@ class Node:
                         volumes: Optional[List[Tuple[Volume, str]]]=None,
                         pre_boot_files: Optional[List[Tuple[str, bytes]]]=None,
                         command: Optional[str]=None,
-                        stdout_callback: Optional[object]=None,
-                        termination_callback: Optional[object]=None,
-                        advertised_tag: Optional[str]=None) -> Container:
+                        stdout_callback: Optional=None,
+                        termination_callback: Optional=None,
+                        tag: Optional[str]=None) -> Container:
         """Asynchronously (by default) spawns a container on the node.
 
         :param image: the short image id from Docker.
@@ -52,7 +52,7 @@ class Node:
         :param command: ignores Entrypoint/Cmd and launches with this script instead, list not string.
         :param stdout_callback: Called when the container sends output - signature (container, string).
         :param termination_callback: For when the container completes - signature (container, returncode).
-        :param advertised_tag: A tag used so other sessions (for the same user) can reference the container.
+        :param tag: A tag used so other sessions (for the same user) can reference the container.
         :return: A Container object.
 
         The resulting Container is initially a placeholder until the container has spawned.
@@ -82,10 +82,10 @@ class Node:
                     raise TypeError
             except TypeError:
                 raise ValueError("You need to pass a list of tuples for pre-boot files - [(filename, data), ...]")
-        if advertised_tag is not None:
+        if tag is not None:
             # will throw an exception if it's no good
-            reply = self.conn().send_blocking_cmd(b'approve_tag', {'user': self.parent().user_pk,
-                                                                   'tag': advertised_tag})
+            self.conn().send_blocking_cmd(b'approve_tag', {'user': self.parent().user_pk,
+                                                           'tag': tag})
 
         # Make it go...
         descr = Docker.description(image, conn=self.conn())
@@ -101,7 +101,7 @@ class Node:
         self.containers[uuid] = Container(self, image, uuid, descr, env, volumes,
                                           stdout_callback=stdout_callback, termination_callback=termination_callback)
         logging.info("Spawning container: " + uuid.decode())
-        cookie = {'session': self.conn().rid, 'user': self.parent().user_pk, 'tag': advertised_tag}
+        cookie = {'session': self.conn().rid, 'user': self.parent().user_pk, 'tag': tag}
         self.conn().send_cmd(b'spawn_container', {'node': self.pk,
                                                   'layer_stack': layers,
                                                   'description': descr,
@@ -111,7 +111,7 @@ class Node:
                                                   'sleep': sleep,
                                                   'cookie': cookie},
                              uuid=uuid,
-                             reply_callback=self._container_status_update)
+                             reply_callback=self.container_status_update)
         return self.containers[uuid]
 
     def destroy_container(self, container: Container):
@@ -119,7 +119,7 @@ class Node:
 
         :param container: The container to be destroyed."""
         container.ensure_alive()
-        container._internal_destroy()
+        container.internal_destroy()
         # removing from .containers and marking any volumes as being free happens in container_status_update
 
     def all_containers(self) -> List[Container]:
@@ -128,20 +128,7 @@ class Node:
         :return: A list of Container objects."""
         return list(self.containers.values())
 
-    def _internal_destroy(self):
-        """Called when the node needs to clean itself up"""
-        # fake container status update messages
-        for ctr in list(self.containers.values()):
-            msg = Message()
-            msg.uuid = ctr.uuid
-            msg.params = {'status': 'destroyed'}
-            self._container_status_update(msg)
-
-    def _update_stats(self, stats):
-        # the node telling us it's current resource state
-        self.stats = stats
-
-    def _container_status_update(self, msg):
+    def container_status_update(self, msg):
         try:
             container = self.containers[msg.uuid]
         except KeyError:
@@ -172,8 +159,21 @@ class Node:
                 container.mark_as_ready()  # to unblock the lock if nothing else
 
             # destroy
-            container._internal_destroy(send_cmd=False)
+            container.internal_destroy(send_cmd=False)
             del self.containers[msg.uuid]
+
+    def update_stats(self, stats):
+        # the node telling us it's current resource state
+        self.stats = stats
+
+    def internal_destroy(self):
+        """Called when the node needs to clean itself up"""
+        # fake container status update messages
+        for ctr in list(self.containers.values()):
+            msg = Message()
+            msg.uuid = ctr.uuid
+            msg.params = {'status': 'destroyed'}
+            self.container_status_update(msg)
 
     def __repr__(self):
         return "<Node '%s' containers=%d>" % \

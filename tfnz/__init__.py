@@ -164,6 +164,9 @@ class TaggedCollection:
             del obj
         self.objects = {}
 
+    def __call__(self, *args, **kwargs):
+        return self.values()
+
     # emulating a dictionary
     def __len__(self) -> int:
         return self.uniques

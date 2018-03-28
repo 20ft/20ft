@@ -38,7 +38,7 @@ class TfTest(TestCase):
     @classmethod
     def setUpClass(cls):
         # ensure we have all the right images
-        images = ['nginx', 'alpine', 'bitnami/apache', 'tfnz/env_test', 'tfnz/ends_test', 'debian']
+        images = ['nginx', 'alpine', 'bitnami/apache', 'tfnz/env_test', 'tfnz/ends_test', 'debian', 'postgres:alpine']
         futures = []
         with ThreadPoolExecutor() as executor:
             for image in images:
@@ -130,14 +130,20 @@ class TfTest(TestCase):
         node.destroy_container(container)
 
     def test_volumes(self):
-        vol = TfTest.location.create_volume()
+
+        def test_termination_callback(obj, returncode):
+            self.terminated_volume = obj
+
+        vol = TfTest.location.create_volume(termination_callback=test_termination_callback)
         vol2 = TfTest.location.create_volume()
         try:
             self.assertIsNotNone(vol, 'Volume was not created')
 
             # delete
             TfTest.location.destroy_volume(vol)
+            TfTest.location.run(timeout=1)
             self.assertTrue(vol not in TfTest.location.volumes, 'Volume did not disappear from the list of volumes')
+            self.assertTrue(self.terminated_volume == vol, 'Volume did not call back to say it had been terminated')
 
             # delete again should bork
             try:
@@ -174,6 +180,17 @@ class TfTest(TestCase):
             self.assertTrue(ctr3.fetch('/mount/point/test') == b'I am a test', "Volume not actually persistent")
             node.destroy_container(ctr3)
             TfTest.location.run(timeout=1)
+
+            # connect from a second client, destroy a volume to test the callback
+            client_session = Location(location=TfTest.location_string)
+            client_session_volume = client_session.create_volume(tag='test')
+            TfTest.location.run(timeout=1)
+            found_volume = TfTest.location.volume('test')
+            found_volume.termination_callback = test_termination_callback
+            client_session.destroy_volume(client_session_volume)
+            TfTest.location.run(timeout=1)
+            client_session.disconnect()
+            self.assertTrue(self.terminated_volume == found_volume, 'Did not get termination callback for found volume')
         finally:
             # clean up, for obvious reasons they're not garbage collected :)
             if vol is not None:
@@ -492,7 +509,7 @@ class TfTest(TestCase):
         # create a server
         tag = str(int(random.random()*1000000))
         server_node = TfTest.location.node()
-        server = server_node.spawn_container('nginx', advertised_tag=tag).wait_until_ready()
+        server = server_node.spawn_container('nginx', tag=tag).wait_until_ready()
 
         # create a client in a separate session
         client_session = Location(location=TfTest.location_string)
@@ -500,7 +517,7 @@ class TfTest(TestCase):
         client = client_node.spawn_container('alpine').wait_until_ready()
 
         # find the server from the second session
-        webserver = client_session.container_for(tag)
+        webserver = client_session.external_container(tag)
         webserver.allow_connection_from(client)
 
         # see if we're a goer
