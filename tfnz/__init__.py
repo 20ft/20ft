@@ -43,6 +43,9 @@ class Waitable:
         self.wait_lock.release()
         return self
 
+    def is_ready(self):
+        return not self.wait_lock.locked()
+
     def mark_as_ready(self):
         if self.wait_lock.locked():
             self.wait_lock.release()

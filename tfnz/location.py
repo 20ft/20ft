@@ -94,29 +94,6 @@ class Location(Waitable):
         except (termios.error, AttributeError):
             self.stdin_attr = None
 
-    def run(self, *, timeout: Optional[float]=None):
-        """The main thread blocks waiting for call_on_main to be called.
-        If we don't have a message queue on the main thread, callbacks won't be able to use blocking calls.
-        With a timeout it is limited to running for that amount of time....
-        No timeout implies run forever, and will disconnect itself when it leaves the loop."""
-        try:
-            while self.conn is not None:
-                cmd, params = self.call_queue.get(timeout=timeout)
-                if cmd is None:
-                    raise params  # no command means raise this exception
-                else:
-                    cmd(*params)  # call the thing
-        except Empty:
-            pass
-        except KeyboardInterrupt:
-            self.disconnect()
-
-    def call_on_main(self, cmd, params):
-        self.call_queue.put((cmd, params))
-
-    def raise_on_main(self, exception):
-        self.call_queue.put((None, exception))
-
     def disconnect(self, container=None, returncode=0):
         """Disconnect from the location - without calling this the object cannot be garbage collected"""
         # the container and returncode are passed if you use 'disconnect' as a termination function on a container
@@ -365,7 +342,7 @@ class Location(Waitable):
         n = Node(self, msg.params['node'], self.conn,  {'memory': 1000, 'cpu': 1000, 'paging': 0, 'ave_start_time': 0})
         self.nodes[msg.params['node']] = n
         if self.new_node_callback is not None:
-            self.call_on_main(self.new_node_callback, n)
+            self.new_node_callback(n)
 
     def _node_destroyed(self, msg):
         logging.debug("Notify - node destroyed: " + b64encode(msg.params['node']).decode())

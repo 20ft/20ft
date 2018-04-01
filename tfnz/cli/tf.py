@@ -265,7 +265,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
     # running interactively?
     interactive = None
     if args.interactive:
-        interactive = Interactive(location, container)
+        interactive = Interactive(container)
 
     # go
     location.run()

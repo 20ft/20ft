@@ -163,9 +163,8 @@ WantedBy=multi-user.target
 
 
 class Interactive:
-    def __init__(self, location, container):
+    def __init__(self, container):
         self.stdin_attr = None
-        self.location = location
         self.container = container
         container.stdout_callback = Interactive.stdout_callback
         self.exit_read, self.exit_write = os.pipe()
@@ -186,7 +185,7 @@ class Interactive:
             if self.exit_read in ready[0]:
                 return
             data = sys.stdin.read(1)
-            self.location.call_on_main(self.container.stdin, (data.encode(),))
+            self.container.stdin(data.encode())
 
     @staticmethod
     def stdout_callback(obj, out):

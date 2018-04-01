@@ -21,7 +21,6 @@ class Volume(Taggable):
     def __init__(self, location, uuid, tag, *, termination_callback=None):
         super().__init__(location.user_pk, uuid, tag=tag)
         # Do not construct directly, use Location.create_volume
-        self.location = weakref.ref(location)
         self.connection = weakref.ref(location.conn)
         self.termination_callback = termination_callback
 
@@ -51,7 +50,7 @@ class Volume(Taggable):
 
     def internal_destroy(self):
         if self.termination_callback is not None:
-            self.location().call_on_main(self.termination_callback, (self, 0))
+            self.termination_callback(self, 0)
 
 
     def __repr__(self):

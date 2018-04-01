@@ -340,7 +340,7 @@ class Container(Waitable, Killable, Connectable):
 
         # Callback
         if self.termination_callback is not None:
-            self.location().call_on_main(self.termination_callback, (self, 0))
+            self.termination_callback(self, 0)
 
     def _process_callback(self, msg):
         if self.bail_if_dead():

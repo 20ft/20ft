@@ -23,7 +23,6 @@ class Process(Killable):
         super().__init__()
         self.parent = weakref.ref(parent)
         self.node = weakref.ref(parent.parent())
-        self.location = weakref.ref(self.node().parent())
         self.conn = weakref.ref(parent.conn())
         self.uuid = uuid
         self.data_callback = data_callback
@@ -66,7 +65,7 @@ class Process(Killable):
         logging.info("Terminated client side: %s" % self.uuid.decode())
         self.mark_as_dead()
         if self.termination_callback is not None:
-            self.location().call_on_main(self.termination_callback, (self, 0))
+            self.termination_callback(self, 0)
 
     def give_me_messages(self, msg):
         if self.bail_if_dead():
@@ -81,18 +80,18 @@ class Process(Killable):
             logging.info("Terminated server side: %s (%d)" % (self.uuid.decode(), msg.params['returncode']))
             self.mark_as_dead()
             if self.termination_callback is not None:
-                self.location().call_on_main(self.termination_callback, (self, msg.params['returncode'],))
+                self.termination_callback(self, msg.params['returncode'])
             return
 
         # Stderr?
         if 'stderr' in msg.params:
             if self.stderr_callback is not None:
-                self.location().call_on_main(self.stderr_callback, (self, msg.bulk))
+                self.stderr_callback(self, msg.bulk)
             return
 
         # Otherwise we're just data
         if self.data_callback is not None:
-            self.location().call_on_main(self.data_callback, (self, msg.bulk))
+            self.data_callback(self, msg.bulk)
 
     def __repr__(self):
         return "<Process '%s'>" % self.uuid.decode()

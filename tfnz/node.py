@@ -136,13 +136,11 @@ class Node:
             return
 
         if 'exception' in msg.params:
-            self.parent().raise_on_main(ValueError(msg.params['exception']))
-            container.mark_as_ready()
-            return
+            raise ValueError(msg.params['exception'])
 
         if 'status' not in msg.params:
             if container.stdout_callback is not None:
-                self.parent().call_on_main(container.stdout_callback, (container, msg.bulk))
+                container.stdout_callback(container, msg.bulk)
             return
 
         if msg.params['status'] == 'running':
@@ -155,8 +153,7 @@ class Node:
         if msg.params['status'] == 'destroyed':
             # wait lock will still be locked if the container did not successfully start
             if not container.is_ready():
-                self.parent().raise_on_main(ValueError("Container did not manage to start"))
-                container.mark_as_ready()  # to unblock the lock if nothing else
+                raise ValueError("Container did not manage to start")
 
             # destroy
             self.destroy_container(container)
