@@ -120,7 +120,7 @@ class Node:
         :param container: The container to be destroyed."""
         container.ensure_alive()
         container.internal_destroy()
-        # removing from .containers and marking any volumes as being free happens in container_status_update
+        del self.containers[container.uuid]
 
     def all_containers(self) -> List[Container]:
         """Returns a list of all the containers running on this node (for *this* session)
@@ -154,13 +154,12 @@ class Node:
 
         if msg.params['status'] == 'destroyed':
             # wait lock will still be locked if the container did not successfully start
-            if container.wait_lock.locked():
+            if not container.is_ready():
                 self.parent().raise_on_main(ValueError("Container did not manage to start"))
                 container.mark_as_ready()  # to unblock the lock if nothing else
 
             # destroy
-            container.internal_destroy(send_cmd=False)
-            del self.containers[msg.uuid]
+            self.destroy_container(container)
 
     def update_stats(self, stats):
         # the node telling us it's current resource state
