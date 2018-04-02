@@ -227,7 +227,7 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
                                          pre_boot_files=preboot,
                                          volumes=volumes,
                                          stdout_callback=Interactive.stdout_callback,
-                                         termination_callback=location.disconnect,
+                                         termination_callback=location.complete,
                                          command=args.command,
                                          sleep=args.sleep)
         container.wait_until_ready()  # a transport for exceptions
@@ -268,11 +268,15 @@ copy the directory ~/.20ft (and it's contents) to this machine.""", file=stderr)
         interactive = Interactive(container)
 
     # go
-    location.run()
-    if interactive is not None:
-        interactive.stop()
+    try:
+        location.run()
+    except BaseException as e:
+        print(e)
+    finally:
+        if interactive is not None:
+            interactive.stop()
 
-    return None
+    return location
 
 
 def main():

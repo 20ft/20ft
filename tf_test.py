@@ -17,7 +17,8 @@ import time
 import requests
 import socket
 import random
-import os.path
+import os
+import signal
 import logging
 import shortuuid
 from concurrent.futures import ThreadPoolExecutor
@@ -32,8 +33,8 @@ from tfnz.components.postgresql import Postgresql
 
 class TfTest(TestCase):
     location = None
-    location_string = "sydney.20ft.nz"
-    location_cert = "~/.ssh/aws_sydney.pem"
+    location_string = "wellington.20ft.nz"
+    location_cert = "~/.ssh/catalyst-wellington"
 
     @classmethod
     def setUpClass(cls):
@@ -46,7 +47,7 @@ class TfTest(TestCase):
         [f.result() for f in futures]
 
         # connect to the location
-        cls.location = Location(location=cls.location_string, debug_log=False)
+        cls.location = Location(location=cls.location_string, debug_log=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -61,7 +62,7 @@ class TfTest(TestCase):
         self.assertTrue(container.parent() == node, 'Container has the wrong parent')
 
         # look for apache having started
-        TfTest.location.run(timeout=10)
+        time.sleep(10)
         ps_result = container.run_process('/bin/ps ax')
         self.assertTrue(b'start --foreground apache' in ps_result[0], 'Container didnt boot properly')
 
@@ -93,14 +94,14 @@ class TfTest(TestCase):
         # is it asleep?
         node = TfTest.location.node()
         container = node.spawn_container('bitnami/apache', sleep=True)
-        TfTest.location.run(timeout=5)  # give it a while to boot or fall over
+        time.sleep(5)  # give it a while to boot or fall over
         ps_result = container.run_process('/bin/ps ax')  # tests that we can still run processes
         self.assertTrue('sh' in ps_result[0].decode())
         self.assertTrue('apache' not in ps_result[0].decode())
 
         # so start it
         container.start()
-        TfTest.location.run(timeout=5)
+        time.sleep(5)
         ps_result = container.run_process('/bin/ps ax')
         self.assertTrue('apache' in ps_result[0].decode())
 
@@ -141,7 +142,7 @@ class TfTest(TestCase):
 
             # delete
             TfTest.location.destroy_volume(vol)
-            TfTest.location.run(timeout=1)
+            time.sleep(5)
             self.assertTrue(vol not in TfTest.location.volumes, 'Volume did not disappear from the list of volumes')
             self.assertTrue(self.terminated_volume == vol, 'Volume did not call back to say it had been terminated')
 
@@ -175,20 +176,20 @@ class TfTest(TestCase):
 
             # destroy and mount in a new container
             node.destroy_container(ctr2)
-            TfTest.location.run(timeout=1)
+            time.sleep(1)
             ctr3 = node.spawn_container('alpine', volumes=[(vol2, '/mount/point')])
             self.assertTrue(ctr3.fetch('/mount/point/test') == b'I am a test', "Volume not actually persistent")
             node.destroy_container(ctr3)
-            TfTest.location.run(timeout=1)
+            time.sleep(1)
 
             # connect from a second client, destroy a volume to test the callback
             client_session = Location(location=TfTest.location_string)
             client_session_volume = client_session.create_volume(tag='test')
-            TfTest.location.run(timeout=1)
+            time.sleep(1)
             found_volume = TfTest.location.volume('test')
             found_volume.termination_callback = test_termination_callback
             client_session.destroy_volume(client_session_volume)
-            TfTest.location.run(timeout=1)
+            time.sleep(1)
             client_session.disconnect()
             self.assertTrue(self.terminated_volume == found_volume, 'Did not get termination callback for found volume')
         finally:
@@ -206,14 +207,14 @@ class TfTest(TestCase):
             postgres.wait_truly_up()
             with open("iso-3166.sql") as f:
                 postgres.put('iso-3166.sql', f.read().encode())
-            TfTest.location.run(timeout=5)
+            time.sleep(5)
             stdout, stderr, rtn = postgres.run_process('cat iso-3166.sql | psql -Upostgres')
             stdout, stderr, rtn = postgres.run_process('echo "SELECT count(*) FROM subcountry;" | psql -Upostgres')
             self.assertTrue(b'3995' in stdout)
         finally:
             if postgres is not None:
                 node.destroy_container(postgres)
-                TfTest.location.run(timeout=5)  # let it unmount volume before we delete it (which we won't normally do)
+                time.sleep(5)  # let it unmount volume before we delete it (which we won't normally do)
             TfTest.location.destroy_volume(vol)
 
     def test_tagging(self):
@@ -365,13 +366,13 @@ class TfTest(TestCase):
 
         # connect them
         server.allow_connection_from(client)
-        TfTest.location.run(timeout=1)
+        time.sleep(1)
         stdout, stderr, exit_code = client.run_process(cmd)
         self.assertTrue(b'Welcome to nginx!' in stdout, 'Did not manage to connect containers')
 
         # disconnect again
         server.disallow_connection_from(client)
-        TfTest.location.run(timeout=1)
+        time.sleep(1)
         stdout, stderr, exit_code = client.run_process(cmd)
         self.assertTrue(exit_code != 0, 'Did not manage to disconnect containers')
 
@@ -445,7 +446,7 @@ class TfTest(TestCase):
 
         # remove a container
         cluster.remove_container(one)
-        TfTest.location.run(timeout=1)
+        time.sleep(1)
         replies = [requests.get('http://' + fqdn).text for _ in range(0, 10)]
         s1 = False
         s2 = False
@@ -497,7 +498,7 @@ class TfTest(TestCase):
             ep.publish(cluster, fqdn, ssl=('cert%s.pem' % fqdn, 'key%s.pem' % fqdn))
 
             # did it work?
-            TfTest.location.run(timeout=1)
+            time.sleep(1)
             reply = requests.get('https://' + fqdn, verify='cert%s.pem' % fqdn)
             self.assertTrue('Welcome to nginx!' in reply.text, 'WebEndpoint failed to publish')
         finally:
@@ -552,7 +553,7 @@ class TfTest(TestCase):
 
         # we now only track containers when they've *actually* gone
         node.destroy_container(c1)
-        TfTest.location.run(timeout=2)
+        time.sleep(2)
 
         self.assertTrue(c2 in node.all_containers(), "Wrong container was removed from list")
         self.assertTrue(c1 not in node.all_containers(), "Wrong container was removed from list (2)")
@@ -666,7 +667,7 @@ class TfTest(TestCase):
 
         # a short process tests termination
         short_process = alpine_container.spawn_process('sleep 1', termination_callback=test_termination_callback)
-        TfTest.location.run(timeout=2)
+        time.sleep(2)
         self.assertTrue(self.terminated_process is short_process, 'Termination callbacks not working')
 
         # worked asynchronously
@@ -677,9 +678,9 @@ class TfTest(TestCase):
 
         # destroys
         alpine_container.destroy_process(long_process)
-        TfTest.location.run(timeout=2)  # time to actually stop
+        time.sleep(2)  # time to actually stop
         self.test_data = b''
-        TfTest.location.run(timeout=2)  # give it a chance to go wrong
+        time.sleep(2)  # give it a chance to go wrong
         destroyed_lines = self.test_data.count(b'\n')
         self.assertTrue(destroyed_lines == 0, 'Destroying a long running process didn\'t work')
 
@@ -687,18 +688,31 @@ class TfTest(TestCase):
         shell = alpine_container.spawn_shell(data_callback=test_data_callback,
                                              termination_callback=test_termination_callback)
         shell.stdin(b'uname -v\n')
-        TfTest.location.run(timeout=1)  # otherwise we kill the process before it's had time to return
+        time.sleep(2)  # otherwise we kill the process before it's had time to return
         alpine_container.destroy_process(shell)
-        TfTest.location.run(timeout=1)  # otherwise we test for termination before it's had time to terminate
+        time.sleep(1)  # otherwise we test for termination before it's had time to terminate
         self.assertTrue(b'Debian' in self.test_data, "Did not apparently shell in")
         self.assertTrue(self.terminated_process is shell, 'Shell did not call termination callback')
 
         # being informed of the termination of a process because it was inside a container that was destroyed
         proc = alpine_container.spawn_process('sleep 1000000', termination_callback=test_termination_callback)
-        TfTest.location.run(timeout=1)
+        time.sleep(1)
         node.destroy_container(alpine_container)
-        TfTest.location.run(timeout=1)
+        time.sleep(1)
         self.assertTrue(self.terminated_process == proc, 'Destroyed process (due to container) callback not working')
+
+    def test_background_blocking_calls(self):
+        self.background_call_completed = False
+
+        def test_termination_callback(obj, returncode):
+            pong = TfTest.location.conn.send_blocking_cmd(b'ping')
+            self.background_call_completed = True
+
+        node = TfTest.location.node()
+        alpine_container = node.spawn_container('alpine')
+        alpine_container.spawn_process('sleep 1', termination_callback=test_termination_callback)
+        time.sleep(5)
+        self.assertTrue(self.background_call_completed, "The background blocking call did not return")
 
     def test_process_interact(self):
         self.sh_data = b''
@@ -709,10 +723,10 @@ class TfTest(TestCase):
         node = TfTest.location.node()
         container = node.spawn_container('alpine', sleep=True)
         ash = container.spawn_process('sh', data_callback=test_interactive_callback)
-        TfTest.location.run(timeout=1)
+        time.sleep(1)
         self.sh_data = b''
         ash.stdin('echo "---hi---"\n'.encode())
-        TfTest.location.run(timeout=1)
+        time.sleep(1)
         self.assertTrue(b'hi' in self.sh_data, "Asynchronous return did not apparently send data")
         async = self.sh_data
         self.sh_data = b''
@@ -727,7 +741,7 @@ class TfTest(TestCase):
 
         node = TfTest.location.node()
         container = node.spawn_container('tfnz/ends_test', termination_callback=test_terminates_callback)
-        TfTest.location.run(timeout=10)
+        time.sleep(10)
         self.assertTrue(self.terminate_data == container, "Termination callback was not called")
 
     def test_tunnels_http(self):
@@ -772,7 +786,7 @@ class TfTest(TestCase):
                 bad_container.run_process(cmd)
             procs = [bad_container.spawn_process(spawn) for _ in range(0, 2)]
             logging.debug("Running procs: " + str(procs))
-            TfTest.location.run(timeout=10)
+            time.sleep(10)
             start = time.time()
             logging.debug("Starting another container, waiting until ready.")
             good_container = node.spawn_container('alpine').wait_until_ready()  # will throw if a problem

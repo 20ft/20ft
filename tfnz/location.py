@@ -21,7 +21,6 @@ import termios
 import sys
 from typing import Union, List, Optional
 from base64 import b64encode
-from queue import Queue, Empty
 from subprocess import run, CalledProcessError, DEVNULL
 from messidge import default_location
 from messidge.client.connection import Connection
@@ -85,14 +84,22 @@ class Location(Waitable):
         self.wait_until_ready()  # doesn't return until a resource offer is made
         self.conn.loop.register_on_idle(self._heartbeat)
 
-        # create a queue of calls that need to be made on the main thread
-        self.call_queue = Queue()
-
         # capture stdin attributes
         try:
             self.stdin_attr = termios.tcgetattr(sys.stdin.fileno())
         except (termios.error, AttributeError):
             self.stdin_attr = None
+
+    def run(self):
+        """Wait until the message loop completes, may raise an exception passed from the background thread."""
+        self.conn.wait_until_complete()
+
+    def complete(self, container=None, returncode=0):
+        """Stop the background loop, causes 'run' to return. Call to close from the background thread."""
+        # the container and returncode are passed if you use 'complete' as a termination function on a container
+        # i.e. it needs to be there, don't take it off!
+        logging.debug("Complete called on location")
+        self.conn.loop.stop()
 
     def disconnect(self, container=None, returncode=0):
         """Disconnect from the location - without calling this the object cannot be garbage collected"""
@@ -108,9 +115,6 @@ class Location(Waitable):
                 print('', end='\r', flush=True)
             except ValueError:
                 pass  # stdin is closed for some reason
-
-        # end the run loop by raising an Empty exception
-        self.call_queue.put(None, Empty)
 
         # destroy the things
         for endpoint in list(self.endpoints.values()):
@@ -338,6 +342,8 @@ class Location(Waitable):
         node.update_stats(msg.params['stats'])
 
     def _node_created(self, msg):
+        if msg.params['node'] in self.nodes:
+            return
         logging.debug("Notify - node created: " + b64encode(msg.params['node']).decode())
         n = Node(self, msg.params['node'], self.conn,  {'memory': 1000, 'cpu': 1000, 'paging': 0, 'ave_start_time': 0})
         self.nodes[msg.params['node']] = n
