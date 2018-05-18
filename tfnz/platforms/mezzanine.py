@@ -21,7 +21,8 @@ from tfnz.endpoint import WebEndpoint, Cluster
 
 
 class Mezzanine:
-    """Puts a Python/Django/Mezzanine instance on each node and load balances. Hosts wsgi applications.
+    container_id = 'cc06f4404bda'
+    """Puts a Python/Django/Mezzanine instance on each node and load balances.
 
     :param location: A location (object) to connect to.
     :param volume: A volume (object) to use as a persistent store - will be mounted on static/media/uploads
@@ -42,7 +43,7 @@ class Mezzanine:
         self.db = Postgresql(nodes[0], sql_volume)
 
         # create the first webserver and use that to initialise a bunch of things
-        first_server = nodes[0].spawn_container('tfnz/mezzanine' if image is None else image,
+        first_server = nodes[0].spawn_container(Mezzanine.container_id if image is None else image,
                                                 volumes=[(volume, '/%s/static/media/uploads/' % app_name)])
         localsettings = Mezzanine.localsettings_template % \
                         (self.db.password, self.db.private_ip(), str(debug), token_urlsafe(32), token_urlsafe(32))
@@ -60,7 +61,7 @@ class Mezzanine:
         # start additional webservers
         self.webservers = [first_server]
         for node in nodes[1:]:
-            server = node.spawn_container('tfnz/mezzanine' if image is None else image,
+            server = node.spawn_container(Mezzanine.container_id if image is None else image,
                                           volumes=[(volume, '/%s/static/media/uploads/' % app_name)])
             server.put('/%s/%s/local_settings.py' % (app_name, app_name), localsettings.encode())
             self.webservers.append(server)
@@ -85,7 +86,7 @@ class Mezzanine:
         logging.info("Mezzanine is up.")
 
     def change_password(self, username, password):
-        """change the username and password of the given user - could be superuser"""
+        """change the username and password of the given user"""
         # also, this is a bit gross
         w = self.webservers[0]
         py = Mezzanine.chpass_template % (password, shortuuid.uuid(), username, self.db.private_ip())

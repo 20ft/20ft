@@ -19,6 +19,7 @@ from tfnz.endpoint import WebEndpoint, Cluster
 
 
 class SilverStripe:
+    container_id = '7a4f9fbb6afc'
     """Puts a PHP/SilverStripe instance on each node and load balances.
 
     :param location: A location (object) to connect to.
@@ -36,18 +37,11 @@ class SilverStripe:
         self.db = Postgresql(nodes[0], sql_volume, log_callback=log_callback)
 
         # spawn one webserver instance
-        first_server = nodes[0].spawn_container('tfnz/silverstripe' if image is None else image,
-                                                volumes=[(volume, '/site')],
+        first_server = nodes[0].spawn_container(SilverStripe.container_id if image is None else image,
+                                                volumes=[(volume, '/site/public/assets')],
                                                 sleep=True,
                                                 stdout_callback=log_callback)
-
-        # see if the data volume has been initialised
-        try:
-            first_server.fetch("/site/index.php")
-        except ValueError:
-            # need to initialise - /site is visible on all servers
-            logging.info("Initialising data volume: " + volume.uuid.decode())
-            first_server.run_process('cp -r /silverstripe/* /site/')
+        first_server.create_ssh_server()
 
         # recreate the .env because the database ip and password will have changed
         dotenv = SilverStripe.environment_template % (fqdn, self.db.password, self.db.private_ip())
@@ -56,8 +50,8 @@ class SilverStripe:
         # start additional webservers
         self.webservers = [first_server]
         for node in nodes[1:]:
-            server = node.spawn_container('tfnz/silverstripe',
-                                          volumes=[(volume, '/site')],
+            server = node.spawn_container(SilverStripe.container_id,
+                                          volumes=[(volume, '/site/public/assets')],
                                           sleep=True)
             self.webservers.append(server)
 
@@ -86,8 +80,8 @@ class SilverStripe:
 
         # Start tailing logs
         for w in self.webservers:
-            w.spawn_process('tail -f /var/log/nginx/access.log', data_callback=log_callback)
-            w.spawn_process('tail -f /var/log/nginx/error.log', data_callback=log_callback)
+            w.spawn_process('tail -n 0 -f /var/log/nginx/access.log', data_callback=log_callback)
+            w.spawn_process('tail -n 0 -f /var/log/nginx/error.log', data_callback=log_callback)
 
     environment_template = """
 SS_BASE_URL="http://%s"
