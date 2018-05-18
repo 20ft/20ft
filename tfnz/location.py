@@ -39,25 +39,26 @@ class Location(Waitable):
 
         :param location: An optional fqdn of the location (i.e. tiny.20ft.nz).
         :param location_ip: A optional explicit ip for the broker.
-        :param new_node_callback: An optional callback for when a node is created ... signature (object)
         :param quiet: Set true to not configure logging.
         :param debug_log: Set true to log at DEBUG logging level.
+        :param new_node_callback: An optional callback for when a node is created ... signature (object)
         """
 
     def __init__(self, *, location: Optional[str]=None, location_ip: Optional[str]=None,
-                 new_node_callback: Optional=None,
-                 quiet: Optional[bool]=False, debug_log: Optional[bool]=False):
+                 quiet: Optional[bool]=False, debug_log: Optional[bool]=False,
+                 new_node_callback: Optional = None):
         super().__init__()
-
-        # collect parameters
         self.location = location if location is not None else default_location(prefix="~/.20ft")
+
+        # internal state you may wish to query  TODO: properties
         self.nodes = {}
         self.volumes = TaggedCollection()
         self.externals = TaggedCollection()
-        self.new_node_callback = new_node_callback
         self.tunnels = {}
         self.endpoints = {}
-        self.domains = None
+
+        # internal state you should probably ignore
+        self.new_node_callback = new_node_callback
         self.last_heartbeat = time.time()
 
         # see if we even can connect...
@@ -92,7 +93,13 @@ class Location(Waitable):
 
     def run(self):
         """Wait until the message loop completes, may raise an exception passed from the background thread."""
-        self.conn.wait_until_complete()
+        try:
+            self.conn.wait_until_complete()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.complete()
+            self.disconnect()
 
     def complete(self, container=None, returncode=0):
         """Stop the background loop, causes 'run' to return. Call to close from the background thread."""
@@ -137,9 +144,7 @@ class Location(Waitable):
     def ranked_nodes(self) -> List[Node]:
         """Ranks the nodes in order of resource availability.
 
-        :return: A list of node objects.
-
-        Note that the difference in processor width/performance is accounted for and is measured in passmarks."""
+        :return: A list of node objects."""
         nodes = self.nodes.values()
         if len(nodes) == 0:
             raise ValueError("The location has no nodes")
@@ -151,9 +156,9 @@ class Location(Waitable):
                       termination_callback: Optional=None) -> Volume:
         """Creates a new volume
 
-        :param tag: An optional globally visible tag (to make the volume globally visible).
+        :param tag: An optional globally visible tag.
         :param async: Enables asynchronous writes.
-        :param termination_callback: a callback for if this volume is destroyed - signature (container, returncode).
+        :param termination_callback: a callback if this volume is destroyed - signature (container, returncode).
         :return: The new Volume object.
 
         Note that asynchronous writes cannot damage a ZFS filesystem although the physical state may lag behind the
@@ -166,6 +171,16 @@ class Location(Waitable):
         vol = Volume(self, msg.uuid, tag, termination_callback=termination_callback)
         self.volumes.add(vol)
         return vol
+
+    def ensure_volume(self, key: Union[bytes, str]) -> Volume:
+        """Return the volume with this uuid, tag or display_name - create the volume if it doesn't exist.
+
+        :param key: The uuid or tag of the volume object to be returned.
+        :return: A Volume object."""
+        try:
+            return self.volumes.get(self.user_pk, key)
+        except KeyError:
+            return self.create_volume(tag=key)
 
     def destroy_volume(self, volume: Volume):
         """Destroys an existing volume. This is not a 'move to trash', it will be destroyed.
@@ -190,16 +205,6 @@ class Location(Waitable):
         :return: A Volume object."""
         return self.volumes.get(self.user_pk, key)
 
-    def ensure_volume(self, key: Union[bytes, str]) -> Volume:
-        """Return the volume with this uuid, tag or display_name - create the volume if it doesn't exist.
-
-        :param key: The uuid or tag of the volume object to be returned.
-        :return: A Volume object."""
-        try:
-            return self.volumes.get(self.user_pk, key)
-        except KeyError:
-            return self.create_volume(tag=key)
-
     def endpoint_for(self, fqdn: str) -> WebEndpoint:
         """Return a WebEndpoint for the given fqdn.
 
@@ -220,11 +225,11 @@ class Location(Waitable):
     def ensure_image_uploaded(self, docker_image_id: str, *, descr: Optional[dict]=None) -> List[str]:
         """Sends missing docker layers to the location.
 
-        :param docker_image_id: use the short form id or name:tag
+        :param docker_image_id: use the short form id or tag
         :param descr: a previously found docker description
         :return: A list of layer sha256 identifiers
 
-        This is not a necessary step and is implied when spawning a container unless specifically disabled."""
+        This is not a necessary step and is implied when spawning a container."""
 
         # Get a description
         if descr is None:
@@ -244,7 +249,7 @@ class Location(Waitable):
 
     @staticmethod
     def all_locations():
-        """Returns a list of 20ft locations that have an account on this machine."""
+        """Returns a (text) list of 20ft locations that have an account on this machine."""
         dirname = os.path.expanduser('~/.20ft/')
         all_files = os.listdir(dirname)
         locations = []
@@ -278,7 +283,7 @@ class Location(Waitable):
     def wait_tcp(self, container, dest_port):
         # called from Container - raises a ValueError if it cannot connect before the timeout
         logging.info("Waiting on tcp (%d): %s" % (dest_port, container.uuid.decode()))
-        self.conn.send_blocking_cmd(b'wait_tcp', {'container': container.uuid, 'port': dest_port}, timeout=10)
+        self.conn.send_blocking_cmd(b'wait_tcp', {'container': container.uuid, 'port': dest_port})
 
     def wait_http_200(self, container, dest_port, fqdn, path, localport=None) -> Tunnel:
         # called from Container
@@ -294,7 +299,7 @@ class Location(Waitable):
 
         # the server side polls so all we need to do is make the request
         url = 'http://%s:%d/%s' % (fqdn, tnl.localport(), path if path is not None else '')
-        r = requests.get(url, timeout=30)
+        r = requests.get(url, timeout=240)
         if r.status_code == 200:
             logging.info("Connected onto: " + url)
             return tnl

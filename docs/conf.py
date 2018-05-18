@@ -9,8 +9,8 @@ project = u'20ft'
 copyright = u'2016-2018, David Preece'
 author = u'David Preece'
 
-version = u'1.2.23'
-release = u'1.2.23'
+version = u'1.3.3'
+release = u'1.3.3'
 
 html_theme = 'sphinx_rtd_theme'
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]

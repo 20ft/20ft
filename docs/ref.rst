@@ -2,26 +2,26 @@
 Reference
 =========
 
-Location
-========
+Locations
+=========
 
 ..  autoclass:: tfnz.location.Location
     :members:
 
-Node
-====
+Nodes
+=====
 
 ..  autoclass:: tfnz.node.Node
     :members:
 
-Volume
-======
+Volumes
+=======
 
 ..  autoclass:: tfnz.volume.Volume
     :members:
 
-Container
-=========
+Containers
+==========
 
 ..  autoclass:: tfnz.container.Container
     :members:
@@ -29,10 +29,25 @@ Container
 ..  autoclass:: tfnz.container.ExternalContainer
     :members:
 
-Process
-=======
+Processes
+=========
 
 ..  autoclass:: tfnz.process.Process
+    :members:
+
+Tunnels
+=======
+
+..  autoclass:: tfnz.tunnel.Tunnel
+    :members:
+
+Endpoints
+=========
+
+..  autoclass:: tfnz.endpoint.Cluster
+    :members:
+
+..  autoclass:: tfnz.endpoint.WebEndpoint
     :members:
 
 Traits
@@ -41,21 +56,14 @@ Traits
 ..  autoclass:: tfnz.Waitable
     :members:
 
-..  autoclass:: tfnz.Killable
-    :members:
-
 ..  autoclass:: tfnz.Connectable
     :members:
 
 ..  autoclass:: tfnz.Taggable
     :members:
 
-Collections
-===========
-
 ..  autoclass:: tfnz.TaggedCollection
-    :members:
-
+    :members: get,values,__call__,__len__,__getitem__,__contains__
 
 Components
 ==========
@@ -71,6 +79,23 @@ Platforms
 
 ..  autoclass:: tfnz.platforms.silverstripe.SilverStripe
     :members:
+
+CLIs
+====
+
+..  autofunction:: tfnz.cli.base_argparse
+
+..  autofunction:: tfnz.cli.generic_cli
+
+..  autoclass:: tfnz.cli.Interactive
+    :members:
+
+Misc
+====
+
+..  autoclass:: tfnz.docker.Docker
+    :members:
+
 
 Man Pages
 =========

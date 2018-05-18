@@ -24,14 +24,15 @@ from .volume import Volume
 
 
 class Node:
-    """An object representing a single node. Do not construct directly, use ranked_nodes on the location."""
+    """An object representing a single node.
+    Do not construct directly, use Location.node() or Location.ranked_nodes()."""
     def __init__(self, parent, pk, conn, stats):
         # Internal Use: Don't construct nodes directly
         self.parent = weakref.ref(parent)
         self.pk = pk
         self.conn = weakref.ref(conn)
-        self.stats = stats  #: A dictionary of performance stats for this node. Automatically kept up to date.
-        self.containers = {}  #: A uuid->object map of containers running on this node (for the current session).
+        self.stats = stats
+        self.containers = {}
 
     def spawn_container(self, image: str, *,
                         env: Optional[List[Tuple[str, str]]]=None,
@@ -42,13 +43,13 @@ class Node:
                         stdout_callback: Optional=None,
                         termination_callback: Optional=None,
                         tag: Optional[str]=None) -> Container:
-        """Asynchronously (by default) spawns a container on the node.
+        """Asynchronously spawns a container on the node.
 
-        :param image: the short image id from Docker.
+        :param image: either the tag or short image id from Docker.
         :param env: a list of environment name, value pairs to be passed.
         :param sleep: replaces the Entrypoint/Cmd with a single blocking command (container still boots).
         :param volumes: a list of (volume, mountpoint) pairs.
-        :param pre_boot_files: List (filename, data) pairs to write into the container before booting.
+        :param pre_boot_files: a list of (filename, data) pairs to write into the container before booting.
         :param command: ignores Entrypoint/Cmd and launches with this script instead, list not string.
         :param stdout_callback: Called when the container sends output - signature (container, string).
         :param termination_callback: For when the container completes - signature (container, returncode).
@@ -59,8 +60,7 @@ class Node:
         Any layers that need to be uploaded to the location are uploaded automatically.
         Note that the container will not be marked as ready until it actually has booted.
 
-        To launch synchronously call wait_until_ready() on the container. This will also cause any exceptions
-        to be transported to the calling thread."""
+        To launch synchronously call wait_until_ready() on the container."""
 
         # Ensure the lists are lists of tuples (or None)
         if env is not None and len(env) > 0:
@@ -123,7 +123,8 @@ class Node:
         del self.containers[container.uuid]
 
     def all_containers(self) -> List[Container]:
-        """Returns a list of all the containers running on this node (for *this* session)
+        """Returns a list of all the containers running on this node (for *this* session).
+        Does not include external containers.
 
         :return: A list of Container objects."""
         return list(self.containers.values())
@@ -158,12 +159,16 @@ class Node:
             # destroy
             self.destroy_container(container)
 
+    def stats(self) -> dict:
+        """Returns a dictionary describing this nodes' current performance."""
+        return self.stats
+
     def update_stats(self, stats):
         # the node telling us it's current resource state
         self.stats = stats
 
     def internal_destroy(self):
-        """Called when the node needs to clean itself up"""
+        # Called when the node needs to clean itself up
         # fake container status update messages
         for ctr in list(self.containers.values()):
             msg = Message()

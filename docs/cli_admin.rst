@@ -7,11 +7,11 @@ Administration from the CLI
 Volumes
 =======
 
-Containers that destroy with the session are of limited usefulness without a way of persistently storing data. In 20ft this is done by mapping in an entire filesystem (volume) rather than by providing block level access.
+Containers that destroy with the session are of limited usefulness without a way of persistently storing data. In 20ft this is done by mapping in an entire filesystem (volume) and not by providing block level access.
 
 Volumes are managed with the 'tfvolumes' command: ::
 
-    dpreece@davermbp ~> tfvolumes
+    $ tfvolumes
     usage: tfvolumes [-h] [--location x.20ft.nz] [--local x.local]
                      {list,create,destroy} ...
 
@@ -30,39 +30,39 @@ Volumes are managed with the 'tfvolumes' command: ::
 
 The 'location' and 'local' flags work the same as for 'tfnz'. The three commands are what you might expect. Let's create a volume: ::
 
-    dpreece@davermbp ~> tfvolumes create
+    $ tfvolumes create
     wedHuVp6eWcyNGwk84fJya
 
 tfvolumes returns the uuid of the volume that has just been created. We can list our volumes::
 
-    dpreece@davermbp ~> tfvolumes list
+    $ tfvolumes list
     wedHuVp6eWcyNGwk84fJya
 
 And destroy does what you would've thought::
 
-    dpreece@davermbp ~> tfvolumes destroy wedHuVp6eWcyNGwk84fJya
-    dpreece@davermbp ~> tfvolumes list
-    dpreece@davermbp ~>
+    $ tfvolumes destroy wedHuVp6eWcyNGwk84fJya
+    $ tfvolumes list
+    $
 
 Tagging
 =======
 
 The above example creates a volume that will be available to every container owned by the current user in the current location. However, distributing this uuid presents something of a problem. To get around this we are able to create a volume that can be referred to by a tag as well as its uuid::
 
-    dpreece@davermbp ~> tfvolumes create postgres_data
+    $ tfvolumes create postgres_data
     naZKTrhjrfMmYBnyWgfQEE:postgres_data
 
 And the uuid appears marked with a tag. We can now refer to the volume by it's uuid, tag alone, or the uuid:tag pair. A quick example::
 
-    dpreece@davermbp ~> tfvolumes list
+    $ tfvolumes list
     naZKTrhjrfMmYBnyWgfQEE:postgres_data
     wedHuVp6eWcyNGwk84fJya
-    dpreece@davermbp ~> tfvolumes destroy postgres_data
-    dpreece@davermbp ~> tfvolumes list
+    $ tfvolumes destroy postgres_data
+    $ tfvolumes list
     wedHuVp6eWcyNGwk84fJya
-    dpreece@davermbp ~> tfvolumes destroy wedHuVp6eWcyNGwk84fJya
-    dpreece@davermbp ~> tfvolumes list
-    dpreece@davermbp ~>
+    $ tfvolumes destroy wedHuVp6eWcyNGwk84fJya
+    $ tfvolumes list
+    $
 
 .. _domains:
 
@@ -73,7 +73,7 @@ Since 20ft webserves from a single IP (with virtual hosts and SNI) it is conceiv
 
 Let 20ft know you are starting the domain claiming process::
 
-    dpreece@davermbp ~> tfdomains prepare example.com
+    $ tfdomains prepare example.com
     Put a DNS record on your domain: tf-token.example.com, TXT=dNZWM6HEmUr2MGqRDhR4X3
     ...then run: tfdomains claim example.com
     The request will time out (and become invalid) after six hours.
@@ -84,9 +84,9 @@ Add the TXT record to your DNS records held with your provider:
 
 Let 20ft know when you have done this::
 
-    dpreece@davermbp ~> tfdomains claim example.com
+    $ tfdomains claim example.com
     Claimed successfully - you can remove the tf-token record from DNS
-    dpreece@davermbp ~> tfdomains list
+    $ tfdomains list
     example.com
 
 20ft is now able to serve requests for that domain. Don't forget that you need a CNAME record pointing to the 20ft location itself. Note that you can use wildcard subdomains...
@@ -95,7 +95,7 @@ Let 20ft know when you have done this::
 
 And you're good to go...::
 
-    dpreece@davermbp ~> tfnz -w test.example.com nginx
+    $ tfnz -w test.example.com nginx
     0217143629.588 INFO     Connecting to: sydney.20ft.nz:2020
     0217143629.643 INFO     Message queue connected
     0217143629.771 INFO     Handshake completed
@@ -138,14 +138,14 @@ There are two utilties in support of 20ft accounts. To be precise, they are in s
 
 This is used to manage the locations you have identities for, and selecting which is the default location. Listing the locations...::
 
-    dpreece@davermbp ~> tflocations list
+    $ tflocations list
     tiny.20ft.nz <== default
     sydney.20ft.nz
 
 In this case shows that I have two identites for tiny.20ft.nz and sydney.20ft.nz. We can select which to use::
 
-    dpreece@davermbp ~/2/20ft> tflocations select sydney
-    dpreece@davermbp ~/2/20ft> tflocations list
+    $ tflocations select sydney
+    $ tflocations list
     tiny.20ft.nz
     sydney.20ft.nz <== default
 
@@ -155,7 +155,7 @@ Note that 'select' uses a substring match so 'sydney' and 'sydney.20ft.nz' can b
 
 This shows the resource offer made to an application when connecting to a given location::
 
-    dpreece@davermbp ~> tfresources
+    $ tfresources
     {
       "location": "tiny.20ft.nz",
       "nodes": {
@@ -178,22 +178,22 @@ This shows the resource offer made to an application when connecting to a given 
 
 This creates a shell script that will write the user identity into the filesystem when pasted into a shell. For example::
 
-    dpreece@davermbp ~> tfacctbak
+    $ tfacctbak
     echo 'mkdir -p ~/.20ft
-    cat > ~/.20ft/tiny.20ft.nz << EOF
+    cat > ~/.20ft/sydney.20ft.nz << EOF
     Nl6CBYQnotmyrealkeyobviouslyxxxl0ybtf6ukP5g=
     EOF
-    cat > ~/.20ft/tiny.20ft.nz.pub << EOF
+    cat > ~/.20ft/sydney.20ft.nz.pub << EOF
     ULVaymypublickeyxxxxxxxxxxxxqztF/X6SOO3OYAQ=
     EOF
-    cat > ~/.20ft/tiny.20ft.nz.spub << EOF
+    cat > ~/.20ft/sydney.20ft.nz.spub << EOF
     Qhv4nqkyqbserverspublickeyV/Z6ZIl3HGKyzkxgA=
     EOF
     cat > ~/.20ft/default_location << EOF
-    tiny.20ft.nz
+    sydney.20ft.nz
     EOF
 
-    chmod 400 ~/.20ft/tiny.20ft.nz*' | /bin/sh
+    chmod 400 ~/.20ft/sydney.20ft.nz*' | /bin/sh
 
 So to enable another machine to use your account on a particular location, this can just be pasted into a shell. **This script includes your private key** and must not be stored, published or emailed.
 

@@ -31,12 +31,12 @@ def main():
 
 def list_vol(location, args):
     for vol in location.all_volumes():
-        print(vol.namespaced_display_name())
+        print(vol.display_name())
 
 
 def create_vol(location, args):
     vol = location.create_volume(tag=args.tag, async=not args.sync)
-    print(vol.namespaced_display_name())
+    print(vol.display_name())
 
 
 def destroy_vol(location, args):

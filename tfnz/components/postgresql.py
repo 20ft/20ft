@@ -30,8 +30,10 @@ class Postgresql(Waitable):
         :param volume: A volume (object) to use as a persistent store.
         :param password: An optional password for the database, will create one if not supplied.
         :param log_callback: An optional callback for log messages -  signature (object, bytes)
-        :param image: Specify a non-default image."""
-    def __init__(self, node: Node, volume: Volume, *, password: str=None, log_callback=None, image=None):
+        :param image: Specify a non-default image.
+
+        Note the instantiated object behaves as if it were derived from Container."""
+    def __init__(self, node: Node, volume: Volume, *, password: str=None, log_callback=None, image: str=None):
         super().__init__()
         # passwords
         if password is None:
@@ -48,7 +50,12 @@ class Postgresql(Waitable):
         self.async = Thread(target=self.wait_truly_up, name="Waiting for Postgres: " + self.ctr.uuid.decode())
         self.async.start()
 
+    def password(self) -> str:
+        """:return: password for the server."""
+        return self.password
+
     def wait_truly_up(self):
+        """Wait on the server until it is ready to answer queries."""
         try:
             # wait for TCP to come up
             self.ctr.wait_tcp(5432)
@@ -70,15 +77,14 @@ class Postgresql(Waitable):
         except BaseException as e:
             logging.critical(str(e))
 
-    def ensure_database(self, name) -> bool:
-        """Ensures a given database exists - returns True if it created a new one"""
+    def ensure_database(self, name: str) -> bool:
+        """Ensures a given database exists in this server. Returns True if it had to be created."""
         self.wait_until_ready()
         return self.ctr.run_process('psql -Upostgres -h%s -c "CREATE DATABASE %s WITH OWNER = postgres '
                                     'ENCODING = \'utf8\' LC_COLLATE = \'en_US.utf8\' LC_CTYPE = \'en_US.utf8\';"'
                                     % (self.ctr.private_ip(), name))[2] == 0
 
     def __getattr__(self, item):
-        """Fake being inherited from the container"""
         return self.ctr.__getattribute__(item)
 
     def __repr__(self):

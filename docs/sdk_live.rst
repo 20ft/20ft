@@ -26,6 +26,8 @@ Let's get the location to pick the best node for us then use that node to spawn 
 
 .. image:: _static/live_container_running.png
 
+.. _live_running:
+
 We can see that our 'loc' object has been joined by 'node' and 'ctr'. The container reports it spawned in under 1 second and is now running. Let's attach a tunnel and see if that is actually the case...
 
 .. image:: _static/live_attach_tunnel.png
@@ -41,3 +43,8 @@ Result! Removing the tunnel again shows a base precept of the SDK - which is tha
 .. image:: _static/live_destroy_tunnel.png
 
 Note that the tunnel object doesn't disappear because the console itself is holding a reference. Just calling 'del' on the object removes it entirely - as can be seen from the variables window.
+
+And so on...
+============
+
+You can achieve most things with 20ft using the 'REPL' technique and it's a good way to learn the SDK. However, it gets fairly problematic once you get to (say) event callbacks and fairly quickly we're into writing 'proper' client software. This is covered in the next chapter...

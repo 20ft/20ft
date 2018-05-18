@@ -2,26 +2,26 @@
 Building Container Images
 =========================
 
-20ft is designed to align as closely as possible with the modern toolset. Specifically this means using Docker's development tools and container images, and presenting containers as remote vms for IDEs or similar toolchains. The hope is that it all glues together easily.
+20ft is designed to align as closely as possible with the modern toolset. Specifically this means using Docker's development tools and container images, and presenting containers as remote vms for IDEs or similar toolchains.
 
 The Role of Docker
 ==================
 
 Docker is used as an image builder, and gateway onto the wider world of docker images. 20ft itself only contains an image *cache*, the point being that it may need images to be uploaded before they can be run, and that it relies on the presence of a docker daemon - usually only on a development machine - to do so.
 
-As a consequence, to do any development for 20ft you will need the docker development kit for your platform (`macOS <https://www.docker.com/docker-mac>`_ or `Windows <https://www.docker.com/docker-windows>`_) installed and running.
 
 An Introduction to Dockerfile
 =============================
 
 A 'Dockerfile' is the container analog to 'Makefile'. The Makefile is concerned specifically with building the software and Dockerfile is concerned with solely building the image so they can (and usually do) coexist in the root directory of a project.
 
-Docker builds disk images as a series of layers laid over each other. Imagine starting with a Debian base install, then adding a CMS, then adding fixtures ... and this is exactly what Docker does, except stopping at each step to snapshot the changes between the current filesystem and the filesystem at the end of the previous step. The great advantage of this is that common and/or time consuming steps only need to be performed once, with a cached result being used for future builds. A Dockerfile is about as syntactically simple as it's possible to get. For example: ::
+Docker builds disk images as a series of layers laid over each other. Imagine starting with a Debian base install, then adding a CMS, then adding fixtures ... and this is exactly what Docker does, except stopping at each step to snapshot the changes between the current filesystem and the filesystem at the end of the previous step. The great advantage of this is that common and/or time consuming steps only need to be performed once, with a cached result being used for future builds.
+
+A Dockerfile is about as syntactically simple as it's possible to get. For example: ::
 
     FROM debian
     RUN apt update
     RUN apt install -y apache2
-    EXPOSE 80
     COPY boot_script /
     CMD /bin/sh boot_script
     COPY index.html /var/www/html/
@@ -33,18 +33,15 @@ Docker builds disk images as a series of layers laid over each other. Imagine st
     RUN
         Is a command to run inside the container in order to create the next layer. So in this case the container is started up in the 'fresh Debian image' state and 'apt update' is run inside that image in order to create the next layer of files.
 
-    EXPOSE
-        Is a port number that will be allowed incoming connections.
-
     COPY
         Copies a file from the host machine to the container image.
 
     CMD
         Tells the container engine which command to issue to actually run the container. (you may also see ENTRYPOINT)
 
-The commands are executed by running ``docker build .`` from the root directory of the project; similarly running ``tf .`` implies that you want to run the most recent build. ::
+The commands are executed by running ``docker build .`` from the root directory of the project; similarly running ``tfnz .`` implies that you want to run the most recent build. ::
 
-    preece@davermbp ~> docker build .
+    $ docker build .
     Sending build context to Docker daemon  4.096kB
     Step 1/7 : FROM debian
      ---> 8cedef9d7368
@@ -53,7 +50,7 @@ The commands are executed by running ``docker build .`` from the root directory 
      ---> Using cache
      ---> 2f68a2591a20
     Successfully built 2f68a2591a20
-    dpreece@davermbp ~> tf .
+    $ tfnz .
     0425101548.712 INFO     Connecting to: tiny.20ft.nz
     0425101548.717 INFO     Message queue connected
     0425101548.743 INFO     Handshake completed.
@@ -61,8 +58,6 @@ The commands are executed by running ``docker build .`` from the root directory 
     0425101548.755 INFO     No layers need uploading for: 2f68a2591a20
     0425101548.756 INFO     Spawning container: b'zeftPyus7zWNpaxkhXPWZ5'
     0425101554.555 INFO     Container is running: b'zeftPyus7zWNpaxkhXPWZ5'
-
-See "Successfully built 2f68a2591a20" became "Ensuring layers are uploaded for: 2f68a2591a20" because '.' implies 'last build'.
 
 It is not the intention to create a full guide to Dockerfiles here, please see `Docker's reference <https://docs.docker.com/engine/reference/builder/>`_ for a full understanding.
 
@@ -135,7 +130,7 @@ A build may not be regarded as "new" when a previous build will suffice. For ins
 
 Building the image gets... ::
 
-    dpreece@davermbp ~> docker build .
+    $ docker build .
     Sending build context to Docker daemon  2.048kB
     Step 1/2 : FROM debian
      ---> 8cedef9d7368
@@ -147,7 +142,7 @@ Building the image gets... ::
 
 We decide against the second step and comment it out ::
 
-    dpreece@davermbp ~/2/df2> docker build .
+    $ docker build .
     Sending build context to Docker daemon  2.048kB
     Step 1/1 : FROM debian
      ---> 8cedef9d7368
@@ -155,7 +150,7 @@ We decide against the second step and comment it out ::
 
 Then decide that wasn't the problem after all and put it back in... ::
 
-    dpreece@davermbp ~/2/df2> docker build .
+    $ docker build .
     Sending build context to Docker daemon  2.048kB
     Step 1/2 : FROM debian
      ---> 8cedef9d7368
@@ -164,7 +159,7 @@ Then decide that wasn't the problem after all and put it back in... ::
      ---> 3960ae683e74
     Successfully built 3960ae683e74
 
-Running 'tf .' we would hope that 20ft would run the most recent build, *but* 3960ae683e74 was actually built two builds ago and the most recent build is still 8cedef9d7368 so 'tf .' would run *that*. If you're getting "my change did nothing" frustrations this is the likely cause and the workaround is to merely state exactly which build you do want to run i.e 'tf 3960ae683e74'.
+Running 'tfnz .' we would hope that 20ft would run the most recent build, *but* 3960ae683e74 was actually built two builds ago and the most recent build is still 8cedef9d7368 so 'tfnz .' would run *that*. If you're getting "my change did nothing" frustrations this is the likely cause and the workaround is to merely state exactly which build you do want to run i.e 'tfnz 3960ae683e74'.
 
 **Docker assumes an identical result every time**
 

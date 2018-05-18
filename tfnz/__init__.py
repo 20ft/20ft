@@ -35,7 +35,10 @@ class Waitable:
             self.wait_lock.release()
 
     def wait_until_ready(self, timeout: Optional[int]=60):
-        """Blocks waiting for a (normally asynchronous) update indicating the object is ready."""
+        """Blocks waiting for a (normally asynchronous) update indicating the object is ready.
+
+        :param timeout: An optional timeout in seconds.
+        :return: self"""
         # this lock is used for waiting on while uploading layers, needs to be long
         acquired = self.wait_lock.acquire(timeout=timeout)
         if not acquired:
@@ -43,7 +46,8 @@ class Waitable:
         self.wait_lock.release()
         return self
 
-    def is_ready(self):
+    def is_ready(self) -> bool:
+        """:return: True if object is ready."""
         return not self.wait_lock.locked()
 
     def mark_as_ready(self):
@@ -56,7 +60,7 @@ class Waitable:
 
 
 class Killable:
-    """An object that can be marked as dead - and either bail and carry on, or raise if dead"""
+    # An object that can be marked as dead - and either bail and carry on, or raise if dead
     def __init__(self):
         self.dead = False
 
@@ -76,7 +80,7 @@ class Killable:
 
 
 class Connectable:
-    """A resource that can be connected to in the private IP space"""
+    """A resource that can be connected to in the private IP space."""
     def __init__(self, conn: Connection, uuid: str, node, ip):
         self.conn = weakref.ref(conn)
         self.uuid = uuid
@@ -84,6 +88,9 @@ class Connectable:
         self.ip = ip  # gets used externally, don't delete it
 
     def allow_connection_from(self, obj):
+        """Allow bidirectional communication between this object and the parameter.
+
+        :param obj: An object that has an ip."""
         self.conn().send_blocking_cmd(b'allow_connection', {'node': self.node_pk,
                                                             'container': self.uuid,
                                                             'ip': obj.ip})
@@ -93,6 +100,9 @@ class Connectable:
         logging.info("Allowed connection (from %s) on: %s" % (obj.uuid.decode(), self.uuid))
 
     def disallow_connection_from(self, obj):
+        """Disallow bidirectional communication between this object and one that was previously allowed to connect.
+
+        :param obj: An object that has an ip."""
         self.conn().send_cmd(b'disallow_connection', {'node': self.node_pk,
                                                       'container': self.uuid,
                                                       'ip': obj.ip})
@@ -100,14 +110,14 @@ class Connectable:
 
 
 class Taggable:
-    """A resource that might have a tag - namespaced by user pk."""
+    """A resource that might have a globally advertisable tag."""
     # user, uuid and tag are all *held* as bytes
     tag_re = re.compile(b'\A[^0-9a-z\-_.]*\Z')
     short_uuid_re = re.compile(b'\A[' + shortuuid.get_alphabet().encode() + b']{22}\Z')
 
     def __init__(self, user: Union[str, bytes], uuid: Union[str, bytes], tag: Optional[Union[str, bytes]]=None):
         if user is None or uuid is None:
-            raise RuntimeError('Taggable resources must be constructed with at least a pk and uui')
+            raise RuntimeError('Taggable resources must be constructed with at least a pk and uuid')
         if isinstance(user, str):
             self.user = user.encode()
         else:
@@ -121,17 +131,18 @@ class Taggable:
         self.tag = None if tag is None else Taggable.valid_tag(tag)
 
     def uuid_key(self) -> (bytes, bytes):
+        """:return: the owner (user) pk and uuid of this object."""
         return self.user, self.uuid
 
     def tag_key(self) -> (bytes, bytes):
-        """Effectively a namespaced tag."""
+        """:return: the owner (user) pk and tag of this object (or None)."""
         if self.tag is None:
-            return None
+            return None, None
         return self.user, self.tag
 
     @staticmethod
     def valid_tag(tag: Union[bytes, str]) -> Union[bytes, None]:
-        """Ensure that the passed tag is at least vaguely plausible - does not check for clashes"""
+        # Ensure that the passed tag is at least vaguely plausible - does not check for clashes
         if tag is None:
             return None
         if len(tag) == 0:
@@ -145,15 +156,18 @@ class Taggable:
             raise ValueError("Tag names cannot look like UUIDs")
         return tag
 
-    def namespaced_display_name(self) -> str:
+    def display_name(self) -> str:
+        """:return: the object's uuid, or uuid:tag pair (as a string) if possible."""
         return self.uuid.decode() if self.tag is None else (self.uuid.decode() + ':' + self.tag.decode())
 
     def global_display_name(self) -> str:
-        return b64encode(self.user).decode() + ':' + self.namespaced_display_name()
+        return b64encode(self.user).decode() + ':' + self.display_name()
 
 
 class TaggedCollection:
-    """A collection of taggable objects"""
+    """A collection of taggable objects."""
+    # Note that objects get a uuid->object store
+
     def __init__(self, initial: Optional[List[Taggable]]=None):
         self.objects = {}
         self.uuid_uuidkey = {}
@@ -167,14 +181,24 @@ class TaggedCollection:
             del obj
         self.objects = {}
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> set:
+        """Calling the tagged collection as if a function.
+
+        :return: a set of unique values"""
         return self.values()
 
     # emulating a dictionary
     def __len__(self) -> int:
+        """Calling len on the collection.
+
+        :return: the number of unique values."""
         return self.uniques
 
-    def __getitem__(self, uuid: Union[str, bytes]) -> Taggable:  # applies to just UUID's
+    def __getitem__(self, uuid: Union[str, bytes]):
+        """Dereference the collection just as you would for a dict, passing the uuid.
+
+        :param uuid: the uuid of the object to retrieve.
+        :return: the object (or raises KeyError)."""
         if isinstance(uuid, str):
             uuidkey = self.uuid_uuidkey[uuid.encode()]
         else:
@@ -182,6 +206,10 @@ class TaggedCollection:
         return self.objects[uuidkey]
 
     def __contains__(self, uuid: Union[str, bytes]) -> bool:
+        """Test to see if a given uuid is 'in' the collection.
+
+        :param uuid: the uuid of the object to test for.
+        :return: boolean"""
         try:
             self[uuid]  # throws if it can't get it so, yes, this does actually do something
             return True
@@ -204,8 +232,12 @@ class TaggedCollection:
             self.objects[obj.tag_key()] = obj
         self.uniques += 1
 
-    def get(self, user: Union[bytes, str], key: Union[bytes, str]) -> Taggable:
-        """Fetch using an ill-defined key: uuid or tag or uuid:tag"""
+    def get(self, user: Union[bytes, str], key: Union[bytes, str]):
+        """Fetch an object given the user PK and a uuid, tag, or uuid:tag
+
+        :param user: User PK
+        :param key: Either the object uuid, tag, or 'uuid:tag' as a format.
+        :return: The reference object or a KeyError."""
         if key is None:
             raise RuntimeError("Key not passed when fetching from TaggedCollection")
         if isinstance(user, str):
@@ -242,7 +274,8 @@ class TaggedCollection:
             return True
         return False
 
-    def values(self):
+    def values(self) -> set:
+        """:return: A set of unique values"""
         return set(self.objects.values())  # de-dupe
 
     def __repr__(self):

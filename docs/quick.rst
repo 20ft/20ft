@@ -2,17 +2,17 @@
 Quick Start
 ===========
 
-The quick start assumes you have already received an invite email. If not, please email davep@20ft.nz to receive one.
+The quick start assumes you have already received an invite email. If not, head to https://20ft.nz and subscribe to the newsletter - this is how you receive an introduction :)
 
 Run on AWS
 ==========
 
-Use the `ready made AMI <https://ap-southeast-2.console.aws.amazon.com/ec2/v2/home?region=ap-southeast-2#LaunchInstanceWizard:ami=ami-dba261b9>`_ (runs fine on t2.nano, login with alpine@) and create an account using the command sent with your invite email.
+Use the `ready made AMI <https://ap-southeast-2.console.aws.amazon.com/ec2/v2/home?region=ap-southeast-2#LaunchInstanceWizard:ami=ami-557cb337>`_ (runs fine on t2.nano, login with alpine@) and create an account using the command sent with your invite email.
 
 To Install on my Local Machine
 ==============================
 
-To ready a computer for being a 20ft development client, `install Docker <https://store.docker.com/search?type=edition&offering=community>`_ then choose which platform to install on - Docker or Python 3. Installing on Docker is simplest but (especially on mac) may prove to have worse performance; Installing into Python 3 needs a Python 3 environment on the development machine, *and also a local docker instance* but should prove to be faster. You will also need gcc and make, if they're not installed already. Note that for any advanced development you will be needing a Python 3 environment anyway.
+To ready a computer for being a 20ft development client, `install Docker <https://store.docker.com/search?type=edition&offering=community>`_ then choose which platform to install on - Docker or Python 3. Installing on Docker is simplest but (especially on mac) may prove to have worse performance; Installing into Python 3 needs a Python 3 environment on the development machine, *and also a local docker instance* but should prove to be faster. Note that for any advanced development you will be needing a Python 3 environment anyway.
 
 **For Docker** Install with ``curl -s https://20ft.nz/docker | sh``.
 
@@ -50,20 +50,20 @@ Your First Docker Workflow
 
 It's all for nothing if we can't change the code that's running, so let's customise our nginx container by replacing the index.html. First, make a new index file::
 
-    davermbp:tmp dpreece$ cat > index.html << EOF
+    $ cat > index.html << EOF
     > Hello World!
     > EOF
 
 And a dockerfile to build our new image::
 
-    davermbp:tmp dpreece$ cat > Dockerfile << EOF
+    $ cat > Dockerfile << EOF
     > FROM nginx
     > ADD index.html /usr/share/nginx/html/
     > EOF
 
 Get Docker to build the image::
 
-    davermbp:tmp dpreece$ docker build .
+    $ docker build .
     Sending build context to Docker daemon  3.072kB
     Step 1/2 : FROM nginx
      ---> 5e69fe4b3c31
@@ -74,7 +74,7 @@ Get Docker to build the image::
 
 Now we can instruct 20ft to use this image with ``tfnz -p 8080:80 .`` - note the '.' that lets 20ft know we want the latest build.::
 
-    davermbp:tmp dpreece$ tfnz -p 8080:80 .
+    $ tfnz -p 8080:80 .
     0409113224.440 INFO     Connecting to: tiny.20ft.nz:2020
     0409113224.454 INFO     Message queue connected
     0409113224.529 INFO     Handshake completed.
@@ -95,9 +95,9 @@ Note that both ``tfnz --help`` and ``man tfnz`` do what you would hope.
 A Shell
 =======
 
-Many images have a shell as their application. Using the ``-ti`` flag we can connect stdin and stdout and open a shell in a new container quickly...::
+Many images have a shell as their application. Using the ``-ti`` flag we can connect stdin and stdout and open a shell in a new container quickly... ::
 
-    davermbp:tmp dpreece$ tfnz -ti alpine
+    $ tfnz -ti alpine
     1114191344.444 INFO     Connecting to: tiny.20ft.nz:2020
     1114191344.461 INFO     Message queue connected
     1114191344.483 INFO     Handshake completed

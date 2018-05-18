@@ -2,7 +2,7 @@
 20ft is different
 =================
 
-There's no orchestrator, no DSL and no guessing about what's going on. 20ft is directly commanded, starting with a simple command line client; and ultimately using the fully OO SDK to produce standalone dynamic container applications. These applications are deployed and administered in exactly the same way as traditional applications, and similarly close or garbage collect their resources when stopped.
+There's no orchestrator, no DSL and no guessing about what's going on. 20ft is directly commanded, starting with a simple command line client; and ultimately using the fully OO SDK to produce standalone dynamic container applications. These applications are deployed and administered in exactly the same way as traditional applications, and garbage collect their resources when stopped.
 
 There's no need to create a cluster, no need to police VM usage, no danger of removing the wrong container and no visibility between user sessions. It's compatible with Docker's containers and development tools so solutions developed on 20ft are portable to other environments (and vice versa).
 
@@ -22,9 +22,13 @@ Contents
     cli_admin
     development
     sdk_live
+    client_apps
+    components
     building
-    procs
-    advanced
-    prod
-    examples
+    cli_apps
+    example_3_tier
+    example_microservice
+    example_test
+    example_dynamic
     ref
+    security_architecture

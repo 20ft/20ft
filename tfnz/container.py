@@ -72,6 +72,19 @@ class Container(Waitable, Killable, Connectable):
         self.wait_until_ready()
         self.location().wait_tcp(self, dest_port)
 
+    def wait_http_200(self, *, dest_port: Optional[int]=80, fqdn: Optional[str]='localhost', path: Optional[str]='') \
+            -> Tunnel:
+        """Poll until an http 200 is returned.
+
+        :param dest_port: Override the default port.
+        :param fqdn: A host name to use in the http request.
+        :param path: A path on the server - appended to /
+        :return: A Tunnel object.
+        """
+        self.ensure_alive()
+        self.wait_until_ready()
+        return self.location().wait_http_200(self, dest_port, fqdn, path)
+
     def attach_tunnel(self, dest_port: int, *, localport: Optional[int]=None, bind: Optional[str]=None) -> Tunnel:
         """Creates a TCP proxy between localhost and a container.
 
@@ -86,19 +99,6 @@ class Container(Waitable, Killable, Connectable):
         self.ensure_alive()
         localport = dest_port if localport is None else localport
         return self.location().tunnel_onto(self, dest_port, localport, bind)
-
-    def wait_http_200(self, *, dest_port: Optional[int]=80, fqdn: Optional[str]='localhost', path: Optional[str]='') \
-            -> Tunnel:
-        """Poll until an http 200 is returned.
-
-        :param dest_port: Override the default port.
-        :param fqdn: A host name to use in the http request.
-        :param path: A path on the server - appended to /
-        :return: A Tunnel object.
-        """
-        self.ensure_alive()
-        self.wait_until_ready()
-        return self.location().wait_http_200(self, dest_port, fqdn, path)
 
     def destroy_tunnel(self, tunnel: Tunnel):
         """Destroy a tunnel
@@ -226,7 +226,7 @@ class Container(Waitable, Killable, Connectable):
         return self.processes[spawn_command_uuid]
 
     def destroy_process(self, process: Process):
-        """Destroy a process
+        """Destroy a process or shell
 
         :param process: The process to be destroyed."""
         self.ensure_alive()
@@ -236,7 +236,7 @@ class Container(Waitable, Killable, Connectable):
         del self.processes[process.uuid]
 
     def all_processes(self) -> List[Process]:
-        """Returns all the processes (that were manually launched) running on this container.
+        """Returns all the processes (launched via API) running on this container.
 
         :return: A list of Process objects"""
         self.ensure_alive()
@@ -255,7 +255,7 @@ class Container(Waitable, Killable, Connectable):
         return s
 
     def destroy_ssh_server(self, server):
-        """Destroy an ssh/sftp server than belongs to this container.
+        """Destroy an ssh/sftp server attached to this container.
 
         :param server: An SshServer object."""
         self.ensure_alive()
@@ -360,7 +360,7 @@ class Container(Waitable, Killable, Connectable):
 
 class ExternalContainer(Connectable, Taggable):
     """An object representing a container managed by another session (and the same user) but advertised using a tag.
-    Do not instantiate directly, use location.container"""
+    Do not instantiate directly, use Location.external_container"""
 
     def __init__(self, loc, uuid, node, ip, tag, *, termination_callback: Optional=None):
         Connectable.__init__(self, loc.conn, uuid, node, ip)

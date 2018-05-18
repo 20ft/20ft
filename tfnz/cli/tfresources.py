@@ -26,8 +26,8 @@ def list_resources(location, args):
     resources = {
         'location': location.location,
         'nodes': {b64encode(node.pk).decode(): node.stats for node in location.nodes.values()},
-        'volumes': [vol.namespaced_display_name() for vol in location.volumes.values()],
-        'externals': [xtn.namespaced_display_name() for xtn in location.externals.values()],
+        'volumes': [vol.display_name() for vol in location.volumes.values()],
+        'externals': [xtn.display_name() for xtn in location.externals.values()],
         'endpoints': [ep.domain for ep in location.endpoints.values()]
     }
 

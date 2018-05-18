@@ -1,6 +1,6 @@
-===============
-Worked Examples
-===============
+==========================
+Example: Automated Testing
+==========================
 
 
 Unit Testing with PyCharm

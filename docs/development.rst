@@ -1,6 +1,6 @@
-==================
-Developing on 20ft
-==================
+===========================
+Development and IDE support
+===========================
 
 This section is about developing *on* 20ft - i.e. purely as a container substrate. For development of 20ft applications, see the sections on `using the SDK <apps.html>`_.
 
@@ -14,7 +14,7 @@ SSH/SFTP
 
 To add an ssh/sftp server onto your container, run tfnz with '-s'...::
 
-    dpreece@davermbp ~> tfnz -s alpine
+    $ tfnz -s alpine
     0222104211.862 INFO     Connecting to: tiny.20ft.nz:2020
     0222104211.912 INFO     Message queue connected
     0222104211.999 INFO     Handshake completed
@@ -26,7 +26,7 @@ To add an ssh/sftp server onto your container, run tfnz with '-s'...::
 
 See that the command line needed is logged. Additional authentication is bypassed so any username/password will work. ::
 
-    dpreece@davermbp ~> ssh -p 2222 root@localhost
+    $ ssh -p 2222 root@localhost
     Welcome to Alpine!
 
     The Alpine Wiki contains a large amount of how-to guides and general
@@ -41,25 +41,25 @@ See that the command line needed is logged. Additional authentication is bypasse
 
 Sftp works the same way: ::
 
-    dpreece@davermbp ~> sftp -P 2222 root@localhost
+    $ sftp -P 2222 root@localhost
     Connected to localhost.
     sftp> ls
     bin     dev     etc     home    lib     media   mnt     native  proc    root    run     sbin    srv     sys     system  tmp     usr     var
 
-To run the ssh server on a non-default port, use '--ssh' then the port number as a command line flag.
+To run the ssh server on a non-default port, use '--ssh' then the port number.
 
 Remote processes can be launched directly from the command line. 20ft will run the process inside a shell, and 'composite' instructions can be given to the shell: ::
 
-    dpreece@davermbp ~> ssh -p 2222 root@localhost "uname"
+    $ ssh -p 2222 root@localhost "uname"
     Linux
-    dpreece@davermbp ~> ssh -p 2222 root@localhost "ping yahoo.com"
+    $ ssh -p 2222 root@localhost "ping yahoo.com"
     PING yahoo.com (98.139.183.24): 56 data bytes
     64 bytes from 98.139.183.24: seq=0 ttl=52 time=231.634 ms
     64 bytes from 98.139.183.24: seq=1 ttl=52 time=230.580 ms
     64 bytes from 98.139.183.24: seq=2 ttl=52 time=229.590 ms
     64 bytes from 98.139.183.24: seq=3 ttl=52 time=232.669 ms
     ^CKilled by signal 2.
-    dpreece@davermbp ~> ssh -p 2222 root@localhost "cd /usr ; ls -Fl"
+    $ ssh -p 2222 root@localhost "cd /usr ; ls -Fl"
     total 19
     drwxr-xr-x    2 root     root           139 Mar  3 11:20 bin/
     drwxr-xr-x    2 root     root             6 Mar  3 11:20 lib/
@@ -74,7 +74,7 @@ The ssh server *should* be compatible with your ide of choice. Here I'm using Py
 
 Let's start with an empty Alpine Linux container with an ssh server attached and a tunnel over to port 80::
 
-    dpreece@davermbp ~> tfnz -s -p 8000:80 alpine
+    $ tfnz -s -p 8000:80 alpine
     0226163142.743 INFO     Connecting to: sydney.20ft.nz:2020
     0226163142.796 INFO     Message queue connected
     0226163142.923 INFO     Handshake completed
@@ -95,7 +95,7 @@ We'll use the Dockerfile as a scratchpad to write down what we've done as we go 
 
 First, SSH into the container and start adding the software we will need. In Alpine's case always start with APK update::
 
-    dpreece@davermbp ~> ssh -p 2222 root@localhost
+    $ ssh -p 2222 root@localhost
     ctr-LTYW4gxYBTzEJhSZdqLr6M:/# apk update ; apk add python3
     fetch http://dl-cdn.alpinelinux.org/alpine/v3.7/main/x86_64/APKINDEX.tar.gz
     fetch http://dl-cdn.alpinelinux.org/alpine/v3.7/community/x86_64/APKINDEX.tar.gz
@@ -173,7 +173,7 @@ And we're pretty much ready to go. Upload 'example.py' to the container by right
 
 We can confirm this worked by curl'ing through the tunnel from our local machine::
 
-    dpreece@davermbp ~> curl http://localhost:8000
+    $ curl http://localhost:8000
     SHLVL=1
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     PWD=/
@@ -199,14 +199,14 @@ While this is all *great*, the minute we close the container all our work will b
 
 So from here it's a simple question of running ``docker build .``::
 
-    dpreece@davermbp ~/P/example> docker build .
+    $ docker build .
     Sending build context to Docker daemon  48.13kB
     ...[snip]...
     Successfully built 913e9ea7dbcf
 
-And now we can run our container the same as before except replacing "alpine" with (also a ) "."::
+And now we can run our container the same as before except replacing "alpine" with "."  ::
 
-    dpreece@davermbp ~> tfnz -s -p 8000:80 .
+    $ tfnz -s -p 8000:80 .
     0226175002.811 INFO     Connecting to: sydney.20ft.nz:2020
     ...[snip]...
     0226175020.117 INFO     Container is running: 99sLwZ4SutJ4uMoDut9AVn
@@ -216,7 +216,7 @@ And now we can run our container the same as before except replacing "alpine" wi
 
 Curl'ing from the command line shows the software is now running under a different environment::
 
-    dpreece@davermbp ~> curl http://127.0.0.1:8000
+    $ curl http://127.0.0.1:8000
     container_uuid=021c2776-290a-480d-a6ef-a8481933b730
     USER=root
     SHLVL=2
@@ -236,9 +236,11 @@ Further Development
 
     **A quick but annoying aside** is that a container to be debugged may need 'socat' installed. This includes Alpine Linux, so we need to add 'socat' to our apk line in the Dockerfile - which now reads ``RUN apk update ; apk add python3 socat`` - and rebuild (``docker build .``)
 
-    Another small annoyance is that now we have a working container, that spawning the container will cause it to start the process we were hoping to debug - including, in this case, locking the port we were hoping to use. We can fix this by adding a '-z' to the command line, causing the container to spawn 'asleep' (``tfnz -z -s -p 8000:80 .``). So, start the container asleep, and return to the example project in the IDE.
+    Another small annoyance is that now we have a working container, that spawning the container will cause it to start the process we were hoping to debug - including, in this case, locking the port we were hoping to use. We can fix this by adding a '-z' to the command line, causing the container to spawn 'asleep' (``tfnz -z -s -p 8000:80 .``).
 
-For some reason it has become necessary to report the container's uname as part of this environment service. So we'll add that to the returned string::
+    If you're following along you'll need to start the container 'asleep', and return to the example project in the IDE.
+
+We're going to add a feature to report the container's uname as part of this environment service. So we'll add that to the returned string::
 
     @route('/')
     def index():
@@ -250,7 +252,7 @@ For some reason it has become necessary to report the container's uname as part 
 
 Start the container up from the command line (``tfnz -z -s -p 8000:80 .``), upload the new version of 'example.py', start with the 'run' button again, and curl the result::
 
-    dpreece@davermbp ~> curl http://127.0.0.1:8000
+    $ curl http://127.0.0.1:8000
     .......
                 <title>Error: 500 Internal Server Error</title>
     .......
@@ -273,9 +275,6 @@ Oh dear, **not** what we were looking for. The console in the debugger lets us k
     10.1.0.2 - - [26/Feb/2018 08:21:10] "GET / HTTP/1.1" 500 741
 
 All we do now is to add a breakpoint and use the 'debug' button on the toolbar instead of 'run' and it does exactly what we might hope...
-
-..  note::
-    **What's with "Checking PyCharm Helpers"?** PyCharm uploads a number of helper utilties so it can debug your container. Since we run the container 'fresh' every time, it needs to re-upload these utilities every time as well. You can avoid this by creating a 'pycharm_helpers' volume and launching with it mounted on /.pycharm_helpers (ie ``tfnz -z -s -m pycharm_helpers:/.pycharm_helpers .``)
 
 ..  warning::
     **There are some "issues" around debugging and ssh right now** and until they're sorted this section will remain "under construction", as they used to say.

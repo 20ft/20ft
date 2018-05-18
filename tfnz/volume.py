@@ -18,6 +18,9 @@ from . import Taggable
 
 
 class Volume(Taggable):
+    """An object representing a persistent volume.
+    Do not construct directly, use Location.create_volume or Location.ensure_volume;
+    or Location.volume to retrieve one that is pre-existing."""
     def __init__(self, location, uuid, tag, *, termination_callback=None):
         super().__init__(location.user_pk, uuid, tag=tag)
         # Do not construct directly, use Location.create_volume
@@ -25,12 +28,12 @@ class Volume(Taggable):
         self.termination_callback = termination_callback
 
     def snapshot(self):
-        """Mark the current state of the volume as being it's initial state."""
+        """Create a snapshot."""
         self.connection().send_cmd(b'snapshot_volume', {'volume': self.uuid})
         logging.info("Set snapshot for volume: " + self.uuid.decode())
 
     def rollback(self):
-        """Resets the volume back to the initial state."""
+        """Resets the volume back to its' state when 'snapshot' was called."""
         self.connection().send_cmd(b'rollback_volume', {'volume': self.uuid})
         logging.info("Rolled back to snapshot: " + self.uuid.decode())
 
@@ -54,4 +57,4 @@ class Volume(Taggable):
 
 
     def __repr__(self):
-        return "<Volume '%s'>" % self.namespaced_display_name()
+        return "<Volume '%s'>" % self.display_name()

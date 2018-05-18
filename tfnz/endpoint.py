@@ -21,13 +21,12 @@ from tfnz.container import Container
 
 
 class Cluster:
-    """An object representing a collection of containers, load balanced and published to an endpoint"""
-
-    def __init__(self, *, containers: Optional[List[Container]]=None, rewrite: Optional[str]=None):
-        """Create a cluster.
+    """An object representing a collection of containers, load balanced and published to an endpoint.
 
         :param containers: An optional list of containers to initialise the cluster with.
         :param rewrite: An optional string to be rewritten into the http host header."""
+
+    def __init__(self, *, containers: Optional[List[Container]]=None, rewrite: Optional[str]=None):
         self.uuid = None
         self.conn = None
         self.containers = {}
@@ -71,10 +70,10 @@ class Cluster:
 
 
 class WebEndpoint:
-    """An HTTP proxy that can expose a number of clusters"""
+    """An HTTP proxy that can expose a number of clusters onto a domain."""
 
     def __init__(self, location, domain: str):
-        """Do not construct directly, see location.endpoints"""
+        # Do not construct directly, see location.endpoints
         self.conn = weakref.ref(location.conn)
         self.domain = domain
         self.clusters = {}  # uuid to cluster

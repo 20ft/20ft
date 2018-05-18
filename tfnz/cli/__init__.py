@@ -12,21 +12,24 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 import sys
-import argparse
 import termios  # this *is* used and *can* be found
 import tty
 import select
 import re
 import logging
 import os
+from argparse import ArgumentParser
 from threading import Thread
 from subprocess import check_call, CalledProcessError
 from messidge import default_location
 from tfnz.location import Location
 
 
-def base_argparse(progname, location=True):
-    parser = argparse.ArgumentParser(prog=progname)
+def base_argparse(progname, location=True) -> ArgumentParser:
+    """Create an argparser with --location and --local flags.
+
+    :return: An argparser"""
+    parser = ArgumentParser(prog=progname)
     if location:
         connection_group = parser.add_argument_group('connection options')
         connection_group.add_argument('--location', help='use a non-default location', metavar='x.20ft.nz')
@@ -34,7 +37,13 @@ def base_argparse(progname, location=True):
     return parser
 
 
-def generic_cli(parser, implementations, *, quiet=True, location=True):
+def generic_cli(parser: ArgumentParser, implementations, *, quiet=True, location=True):
+    """Call to implement a cli. See tfdomains etc.
+
+    :param parser: an ArgumentParser from base_argparse.
+    :param implementations: A map of verb->implementation for the various commands.
+    :param quiet: Don't configure logging.
+    :param location: Whether or not to connect to the location."""
     args = parser.parse_args()
     dl = None
     loc = None
@@ -70,7 +79,6 @@ def generic_cli(parser, implementations, *, quiet=True, location=True):
     finally:
         if loc is not None:
             loc.disconnect()
-    exit(0)
 
 
 # removes a flagged parameter from argv
@@ -163,6 +171,10 @@ WantedBy=multi-user.target
 
 
 class Interactive:
+    """Wrap around a container to map stdin and stdout to terminal.
+
+    :param container: the Container to wrap."""
+
     def __init__(self, container):
         self.stdin_attr = None
         self.container = container
@@ -172,7 +184,7 @@ class Interactive:
         self.thread.start()
 
     def stdin_loop(self):
-        # fails in debugger so we'll just ignore that
+        # runs on background thread
         print("Interactive session - escape is triple \'^]\'.", flush=True)
         try:
             tty.setraw(sys.stdin.fileno())
@@ -189,11 +201,13 @@ class Interactive:
 
     @staticmethod
     def stdout_callback(obj, out):
+        """Pass Interactive.stdout_callback as the stdout_callback parameter in spawn_container."""
         # strip nasty control code things
         parts = re.split(b'\x1b\[\d*n', out)
         sys.stdout.buffer.write(b''.join(parts))
         sys.stdout.flush()
 
     def stop(self, obj=None, code=None):
+        """Call to stop the background loop, can be a termination_callback parameter."""
         # reset stdin if we can
         os.write(self.exit_write, b'\n')
