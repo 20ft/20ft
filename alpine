@@ -1,6 +1,6 @@
 sudo su
 apk update
-apk add python3-dev gcc musl-dev libffi-dev zeromq-dev openssl-dev linux-headers make docker man bash curl nano
+apk add python3-dev gcc musl-dev libffi-dev zeromq-dev openssl-dev linux-headers make procps docker man bash curl nano
 pip3 install --compile tfnz
 rc-update add docker
 openrc -s docker start
