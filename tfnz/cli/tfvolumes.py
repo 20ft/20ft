@@ -35,7 +35,7 @@ def list_vol(location, args):
 
 
 def create_vol(location, args):
-    vol = location.create_volume(tag=args.tag, async=not args.sync)
+    vol = location.create_volume(tag=args.tag, asynchronous=not args.sync)
     print(vol.display_name())
 
 

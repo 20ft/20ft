@@ -47,8 +47,8 @@ class Postgresql(Waitable):
                                         stdout_callback=log_callback)
 
         # async initialise
-        self.async = Thread(target=self.wait_truly_up, name="Waiting for Postgres: " + self.ctr.uuid.decode())
-        self.async.start()
+        self.asynchronous = Thread(target=self.wait_truly_up, name="Waiting for Postgres: " + self.ctr.uuid.decode())
+        self.asynchronous.start()
 
     def password(self) -> str:
         """:return: password for the server."""

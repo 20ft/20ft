@@ -33,8 +33,8 @@ from tfnz.components.postgresql import Postgresql
 
 class TfTest(TestCase):
     location = None
-    location_string = "wellington.20ft.nz"
-    location_cert = "~/.ssh/catalyst-wellington"
+    location_string = "tiny.20ft.nz"
+    location_cert = "~/.30ft/tiny.20ft.nz"
 
     @classmethod
     def setUpClass(cls):
@@ -728,7 +728,7 @@ class TfTest(TestCase):
         ash.stdin('echo "---hi---"\n'.encode())
         time.sleep(1)
         self.assertTrue(b'hi' in self.sh_data, "Asynchronous return did not apparently send data")
-        async = self.sh_data
+        asynchronous = self.sh_data
         self.sh_data = b''
         container.destroy_process(ash)
         node.destroy_container(container)

@@ -152,12 +152,12 @@ class Location(Waitable):
                       key=lambda node: node.stats['cpu'] + node.stats['memory'] - 10 * node.stats['paging'],
                       reverse=True)
 
-    def create_volume(self, *, tag: Optional[str]=None, async: Optional[bool]=True,
+    def create_volume(self, *, tag: Optional[str]=None, asynchronous: Optional[bool]=True,
                       termination_callback: Optional=None) -> Volume:
         """Creates a new volume
 
         :param tag: An optional globally visible tag.
-        :param async: Enables asynchronous writes.
+        :param asynchronous: Enables asynchronous writes.
         :param termination_callback: a callback if this volume is destroyed - signature (container, returncode).
         :return: The new Volume object.
 
@@ -166,7 +166,7 @@ class Location(Waitable):
         tag = Taggable.valid_tag(tag)
         msg = self.conn.send_blocking_cmd(b'create_volume', {'user': self.user_pk,
                                                              'tag': tag,
-                                                             'async': async})
+                                                             'async': asynchronous})
         logging.info("Created volume: " + msg.uuid.decode())
         vol = Volume(self, msg.uuid, tag, termination_callback=termination_callback)
         self.volumes.add(vol)
