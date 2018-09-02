@@ -351,7 +351,7 @@ class Container(Waitable, Killable, Connectable):
             return
 
         logging.debug("Received data from process: " + msg.uuid.decode())
-        logging.debug(msg.bulk)
+        logging.debug(msg.bulk.decode())
         self.processes[msg.uuid].give_me_messages(msg)
 
     def __repr__(self):
