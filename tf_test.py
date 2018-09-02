@@ -64,7 +64,7 @@ class TfTest(TestCase):
         # look for apache having started
         time.sleep(10)
         ps_result = container.run_process('/bin/ps ax')
-        self.assertTrue(b'start --foreground apache' in ps_result[0], 'Container didnt boot properly')
+        self.assertTrue(b'apache/bin/httpd' in ps_result[0], 'Container didnt boot properly')
 
         # did it use the right docker config?
         ideal = Docker.description('bitnami/apache')
